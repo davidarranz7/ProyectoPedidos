@@ -1,0 +1,16 @@
+services:
+  postgres-pedidos:
+    image: postgres:16
+    container_name: fastflow_postgres_pedidos
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fastflow_pedidos
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - fastflow_postgres_pedidos_data:/var/lib/postgresql/data
+
+volumes:
+  fastflow_postgres_pedidos_data:
