@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
 import {
+  avisarRuta,
   listarPedidosHd,
+  listarRutasActivas,
   marcarPedidoPreparado,
 } from '../servicios/pedidoServicio';
 
 function HdInternoPagina() {
   const [pedidos, setPedidos] = useState([]);
+  const [rutasActivas, setRutasActivas] = useState([]);
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState(null);
   const [vistaActiva, setVistaActiva] = useState('pedidos');
   const [cargando, setCargando] = useState(true);
   const [procesandoAccion, setProcesandoAccion] = useState(false);
+  const [rutaProcesandoId, setRutaProcesandoId] = useState(null);
   const [error, setError] = useState('');
   const [mensaje, setMensaje] = useState('');
 
@@ -25,11 +29,16 @@ function HdInternoPagina() {
 
   async function cargarPedidos() {
     try {
-      const datos = await listarPedidosHd();
-      setPedidos(datos);
+      const [datosPedidos, datosRutas] = await Promise.all([
+        listarPedidosHd(),
+        listarRutasActivas(),
+      ]);
+
+      setPedidos(datosPedidos);
+      setRutasActivas(datosRutas);
 
       if (pedidoSeleccionado) {
-        const actualizado = datos.find(
+        const actualizado = datosPedidos.find(
           (pedido) => pedido.id === pedidoSeleccionado.id
         );
 
@@ -71,33 +80,73 @@ function HdInternoPagina() {
     }
   }
 
+  async function avisarRutaCompleta(ruta) {
+    try {
+      setRutaProcesandoId(ruta.id);
+      setMensaje('');
+      setError('');
+
+      await avisarRuta(ruta.id);
+
+      setMensaje(
+        `Ruta de ${ruta.motero?.nombre || 'motero'} preparada y motero avisado.`
+      );
+
+      await cargarPedidos();
+    } catch (error) {
+      setError('No se pudo avisar la ruta completa.');
+    } finally {
+      setRutaProcesandoId(null);
+    }
+  }
+
+  const pedidosRutasActivas = rutasActivas.flatMap((ruta) =>
+    (ruta.pedidos || []).map((pedidoRuta) => ({
+      ruta,
+      pedidoRuta,
+      pedido: pedidoRuta.pedido,
+    }))
+  );
+
+  const idsPedidosEnRutasActivas = new Set(
+    pedidosRutasActivas.map((item) => item.pedido.id)
+  );
+
   const pedidosProgramados = pedidos.filter(
     (pedido) => pedido.estado === 'PROGRAMADO'
   );
 
-  const pedidosActivos = pedidos.filter(
+  const pedidosHistorial = pedidos.filter(
     (pedido) =>
+      (pedido.estado === 'ENTREGADO' || pedido.estado === 'CANCELADO') &&
+      !idsPedidosEnRutasActivas.has(pedido.id)
+  );
+
+  const pedidosAsignacionPrevista = pedidos.filter(
+    (pedido) => pedido.estado === 'ASIGNACION_PREVISTA'
+  );
+
+  const pedidosSinRutaTemporal = pedidos.filter(
+    (pedido) =>
+      pedido.estado !== 'PROGRAMADO' &&
+      pedido.estado !== 'ASIGNACION_PREVISTA' &&
       pedido.estado !== 'ENTREGADO' &&
       pedido.estado !== 'CANCELADO' &&
-      pedido.estado !== 'PROGRAMADO'
+      !pedido.moteroAsignado &&
+      !idsPedidosEnRutasActivas.has(pedido.id)
   );
 
-  const pedidosHistorial = pedidos.filter(
-    (pedido) => pedido.estado === 'ENTREGADO' || pedido.estado === 'CANCELADO'
-  );
+  const totalPedidosRutasActivas = pedidosRutasActivas.length;
 
-  const pedidosSinAsignar = pedidosActivos.filter(
-    (pedido) => !pedido.moteroAsignado
-  );
+  const pedidosActivos =
+    pedidosAsignacionPrevista.length +
+    pedidosSinRutaTemporal.length +
+    totalPedidosRutasActivas;
 
-  const pedidosAsignados = pedidosActivos.filter(
-    (pedido) => pedido.moteroAsignado
-  );
-
-  const pedidosEnCamino = pedidosAsignados.filter(
-    (pedido) =>
-      pedido.estado === 'EN_CAMINO' ||
-      pedido.estado === 'RECOGIDO_ESTABLECIMIENTO'
+  const pedidosEnCamino = pedidosRutasActivas.filter(
+    (item) =>
+      item.ruta.estado === 'EN_REPARTO' &&
+      item.pedidoRuta.estado !== 'ENTREGADO'
   );
 
   function obtenerTextoOrigen(pedido) {
@@ -132,6 +181,10 @@ function HdInternoPagina() {
       return 'estado-hd programado';
     }
 
+    if (estado === 'ASIGNACION_PREVISTA') {
+      return 'estado-hd prevista';
+    }
+
     if (estado === 'ASIGNADO_MOTERO') {
       return 'estado-hd asignado';
     }
@@ -164,6 +217,14 @@ function HdInternoPagina() {
       return 'tarjeta-hd programado';
     }
 
+    if (pedido.estado === 'ASIGNACION_PREVISTA') {
+      return 'tarjeta-hd prevista';
+    }
+
+    if (pedido.estado === 'ENTREGADO') {
+      return 'tarjeta-hd entregado';
+    }
+
     if (
       pedido.estado === 'EN_CAMINO' ||
       pedido.estado === 'RECOGIDO_ESTABLECIMIENTO'
@@ -171,7 +232,7 @@ function HdInternoPagina() {
       return 'tarjeta-hd en-camino';
     }
 
-    if (pedido.estado === 'PREPARADO' || pedido.estado === 'MOTERO_AVISADO') {
+    if (pedido.estado === 'MOTERO_AVISADO') {
       return 'tarjeta-hd preparado';
     }
 
@@ -188,6 +249,56 @@ function HdInternoPagina() {
       pedido.estado === 'ASIGNADO_MOTERO' ||
       pedido.estado === 'PREPARADO'
     );
+  }
+
+  function puedeAvisarRuta(ruta) {
+    if (ruta.estado !== 'ABIERTA') {
+      return false;
+    }
+
+    return ruta.pedidos.some(
+      (pedidoRuta) =>
+        pedidoRuta.pedido.estado === 'ASIGNADO_MOTERO' ||
+        pedidoRuta.pedido.estado === 'PREPARADO' ||
+        pedidoRuta.pedido.estado === 'EN_COCINA'
+    );
+  }
+
+  function obtenerTextoEstadoRuta(ruta) {
+    if (ruta.estado === 'ABIERTA') {
+      return 'Pendiente de preparar';
+    }
+
+    if (ruta.estado === 'AVISADA') {
+      return 'Motero avisado';
+    }
+
+    if (ruta.estado === 'EN_REPARTO') {
+      return 'En reparto';
+    }
+
+    return ruta.estado;
+  }
+
+  function obtenerTextoEstadoPedidoRuta(estado) {
+    if (estado === 'EN_ENTREGA') {
+      return 'Entrega actual';
+    }
+
+    if (estado === 'ENTREGADO') {
+      return 'Entregado';
+    }
+
+    if (estado === 'PENDIENTE') {
+      return 'Pendiente en ruta';
+    }
+
+    return estado;
+  }
+
+  function contarEntregadosRuta(ruta) {
+    return ruta.pedidos.filter((pedidoRuta) => pedidoRuta.estado === 'ENTREGADO')
+      .length;
   }
 
   function abrirDetallePedido(pedido) {
@@ -231,11 +342,22 @@ function HdInternoPagina() {
           </div>
         )}
 
-        {tipo === 'asignado' && (
-          <div className="tarjeta-hd-motero">
-            <span>Motero</span>
-            <strong>{pedido.moteroAsignado?.nombre || 'Sin asignar'}</strong>
+        {tipo === 'prevista' && (
+          <div className="tarjeta-asignacion-prevista">
+            <span>Lo recogerá</span>
+            <strong>{pedido.moteroAsignado?.nombre || 'Sin motero'}</strong>
           </div>
+        )}
+
+        {tipo === 'sin-ruta' && (
+          <div className="tarjeta-asignacion-prevista sin-motero">
+            <span>Sin ruta</span>
+            <strong>Esperando motero</strong>
+          </div>
+        )}
+
+        {pedido.estado === 'MOTERO_AVISADO' && (
+          <div className="aviso-motero-listo">Listo para recogida</div>
         )}
 
         {(pedido.estado === 'EN_CAMINO' ||
@@ -243,6 +365,100 @@ function HdInternoPagina() {
           <div className="aviso-en-camino">Pedido en camino</div>
         )}
       </button>
+    );
+  }
+
+  function renderTarjetaPedidoRuta(pedidoRuta) {
+    const pedido = pedidoRuta.pedido;
+
+    return (
+      <button
+        type="button"
+        key={pedidoRuta.id}
+        className={claseTarjetaPedido(pedido)}
+        onClick={() => abrirDetallePedido(pedido)}
+      >
+        <div className="ruta-pedido-info">
+          <span>Orden {pedidoRuta.ordenEntrega}</span>
+          <strong>{obtenerTextoEstadoPedidoRuta(pedidoRuta.estado)}</strong>
+        </div>
+
+        <div className="tarjeta-hd-arriba">
+          <div>
+            <strong>{pedido.numeroPedido}</strong>
+            <span>{obtenerTextoOrigen(pedido)}</span>
+          </div>
+
+          <p className={claseEstadoPedido(pedido.estado)}>{pedido.estado}</p>
+        </div>
+
+        <div className="tarjeta-hd-cuerpo">
+          <p>{pedido.clienteDireccion || 'Sin dirección'}</p>
+          <small>{obtenerTotalProductos(pedido)} productos</small>
+        </div>
+
+        {pedidoRuta.estado === 'EN_ENTREGA' && (
+          <div className="aviso-en-camino">Entrega actual</div>
+        )}
+
+        {pedidoRuta.estado === 'ENTREGADO' && (
+          <div className="aviso-pedido-entregado-ruta">
+            Entregado a las {obtenerHora(pedidoRuta.fechaEntregado)}
+          </div>
+        )}
+
+        {pedidoRuta.estado === 'PENDIENTE' && (
+          <div className="aviso-motero-listo">Pendiente en ruta</div>
+        )}
+      </button>
+    );
+  }
+
+  function renderGrupoRuta(ruta) {
+    const totalEntregados = contarEntregadosRuta(ruta);
+    const totalPedidos = ruta.pedidos.length;
+
+    return (
+      <article key={ruta.id} className="grupo-ruta-motero">
+        <div className="grupo-ruta-cabecera">
+          <div>
+            <span>Ruta #{ruta.id}</span>
+            <strong>{ruta.motero?.nombre || 'Sin motero'}</strong>
+            <small>{obtenerTextoEstadoRuta(ruta)}</small>
+          </div>
+
+          <div className="grupo-ruta-accion">
+            <p>
+              {totalEntregados}/{totalPedidos} entregados
+            </p>
+
+            {puedeAvisarRuta(ruta) && (
+              <button
+                type="button"
+                className="boton-aviso-ruta"
+                disabled={rutaProcesandoId === ruta.id}
+                onClick={() => avisarRutaCompleta(ruta)}
+              >
+                {rutaProcesandoId === ruta.id
+                  ? 'Avisando...'
+                  : 'Ruta lista / avisar motero'}
+              </button>
+            )}
+
+            {ruta.estado === 'AVISADA' && (
+              <span className="etiqueta-ruta-avisada">Ruta avisada</span>
+            )}
+
+            {ruta.estado === 'EN_REPARTO' && (
+              <span className="etiqueta-ruta-reparto">En reparto</span>
+            )}
+          </div>
+        </div>
+
+        <div className="grupo-ruta-lista">
+          {ruta.pedidos.map((pedidoRuta) => renderTarjetaPedidoRuta(pedidoRuta))}
+        </div>
+      </article>
     );
   }
 
@@ -393,42 +609,49 @@ function HdInternoPagina() {
           </div>
         </section>
 
-        <section className="columna-hd sin-asignar">
+        <section className="columna-hd asignacion-prevista">
           <div className="titulo-columna-hd">
             <div>
-              <p>Pedidos sin asignar</p>
-              <span>Entrantes pendientes de motero</span>
+              <p>Asignación prevista</p>
+              <span>Reservados para cuando termine una ruta</span>
             </div>
-            <strong>{pedidosSinAsignar.length}</strong>
+            <strong>
+              {pedidosAsignacionPrevista.length + pedidosSinRutaTemporal.length}
+            </strong>
           </div>
 
           <div className="lista-pedidos-hd">
-            {pedidosSinAsignar.length === 0 ? (
-              <p className="vacio-hd">No hay pedidos sin asignar.</p>
+            {pedidosAsignacionPrevista.length === 0 &&
+            pedidosSinRutaTemporal.length === 0 ? (
+              <p className="vacio-hd">Sin asignaciones previstas.</p>
             ) : (
-              pedidosSinAsignar.map((pedido) =>
-                renderTarjetaPedido(pedido, 'sin-asignar')
-              )
+              <>
+                {pedidosAsignacionPrevista.map((pedido) =>
+                  renderTarjetaPedido(pedido, 'prevista')
+                )}
+
+                {pedidosSinRutaTemporal.map((pedido) =>
+                  renderTarjetaPedido(pedido, 'sin-ruta')
+                )}
+              </>
             )}
           </div>
         </section>
 
-        <section className="columna-hd asignados">
+        <section className="columna-hd pedidos-ruta">
           <div className="titulo-columna-hd">
             <div>
-              <p>Pedidos asignados</p>
-              <span>Con motero asignado</span>
+              <p>Pedidos con ruta</p>
+              <span>Rutas activas por motero</span>
             </div>
-            <strong>{pedidosAsignados.length}</strong>
+            <strong>{totalPedidosRutasActivas}</strong>
           </div>
 
           <div className="lista-pedidos-hd">
-            {pedidosAsignados.length === 0 ? (
-              <p className="vacio-hd">No hay pedidos asignados.</p>
+            {rutasActivas.length === 0 ? (
+              <p className="vacio-hd">No hay rutas activas.</p>
             ) : (
-              pedidosAsignados.map((pedido) =>
-                renderTarjetaPedido(pedido, 'asignado')
-              )
+              rutasActivas.map((ruta) => renderGrupoRuta(ruta))
             )}
           </div>
         </section>
@@ -517,7 +740,7 @@ function HdInternoPagina() {
         <div className="acciones-cabecera-hd">
           <div>
             <small>Activos</small>
-            <strong>{pedidosActivos.length}</strong>
+            <strong>{pedidosActivos}</strong>
           </div>
 
           <div>
@@ -543,7 +766,7 @@ function HdInternoPagina() {
           onClick={() => setVistaActiva('pedidos')}
         >
           <span>Pedidos</span>
-          <strong>{pedidosActivos.length}</strong>
+          <strong>{pedidosActivos}</strong>
         </button>
 
         <button
@@ -566,6 +789,11 @@ function HdInternoPagina() {
       </nav>
 
       {cargando && <p className="mensaje-hd">Cargando pedidos...</p>}
+
+      {mensaje && !pedidoSeleccionado && (
+        <p className="mensaje-hd">{mensaje}</p>
+      )}
+
       {error && !pedidoSeleccionado && (
         <p className="mensaje-hd error">{error}</p>
       )}

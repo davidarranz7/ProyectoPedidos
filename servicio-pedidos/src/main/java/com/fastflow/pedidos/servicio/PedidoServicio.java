@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,10 +32,13 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class PedidoServicio {
 
+    private static final int MAX_PEDIDOS_ACTIVOS_POR_MOTERO = 3;
+
     private final PedidoRepositorio pedidoRepositorio;
     private final ProductoRepositorio productoRepositorio;
     private final MoteroRepositorio moteroRepositorio;
     private final PedidoMapper pedidoMapper;
+    private final RutaRepartoServicio rutaRepartoServicio;
 
     @Transactional
     public PedidoResponse crearPedidoHd(CrearPedidoHdRequest request) {
@@ -82,15 +86,20 @@ public class PedidoServicio {
         }
 
         if (!esProgramado) {
-            asignarMoteroDisponibleAutomaticamente(pedido);
+            asignarPedidoODejarEnPrevision(pedido);
         }
 
         Pedido pedidoGuardado = pedidoRepositorio.save(pedido);
 
+        if (pedidoGuardado.getEstado() == EstadoPedido.ASIGNADO_MOTERO
+                && pedidoGuardado.getMoteroAsignado() != null) {
+            rutaRepartoServicio.agregarPedidoARutaAbierta(pedidoGuardado);
+        }
+
         return pedidoMapper.convertirPedido(pedidoGuardado);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<PedidoResponse> listarPedidosHd() {
         activarPedidosProgramadosVencidos();
 
@@ -98,7 +107,7 @@ public class PedidoServicio {
         return pedidoMapper.convertirPedidos(pedidos);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<PedidoResponse> listarPedidosCocinaHamburguesas() {
         activarPedidosProgramadosVencidos();
 
@@ -106,6 +115,8 @@ public class PedidoServicio {
 
         return pedidos.stream()
                 .filter(pedido -> pedido.getEstado() != EstadoPedido.PROGRAMADO)
+                .filter(pedido -> pedido.getEstado() != EstadoPedido.ENTREGADO)
+                .filter(pedido -> pedido.getEstado() != EstadoPedido.CANCELADO)
                 .map(this::filtrarPedidoParaHamburguesas)
                 .filter(pedido -> !pedido.getLineas().isEmpty())
                 .map(pedidoMapper::convertirPedido)
@@ -141,29 +152,78 @@ public class PedidoServicio {
 
         for (Pedido pedido : pedidosProgramados) {
             pedido.setEstado(EstadoPedido.EN_COCINA);
-            asignarMoteroDisponibleAutomaticamente(pedido);
+            asignarPedidoODejarEnPrevision(pedido);
         }
 
-        pedidoRepositorio.saveAll(pedidosProgramados);
+        List<Pedido> pedidosGuardados = pedidoRepositorio.saveAll(pedidosProgramados);
+
+        for (Pedido pedidoGuardado : pedidosGuardados) {
+            if (pedidoGuardado.getEstado() == EstadoPedido.ASIGNADO_MOTERO
+                    && pedidoGuardado.getMoteroAsignado() != null) {
+                rutaRepartoServicio.agregarPedidoARutaAbierta(pedidoGuardado);
+            }
+        }
     }
 
-    private void asignarMoteroDisponibleAutomaticamente(Pedido pedido) {
-        Optional<Motero> moteroDisponible = moteroRepositorio
-                .findByEstadoAndActivoTrue(EstadoMotero.DISPONIBLE)
-                .stream()
-                .findFirst();
+    private void asignarPedidoODejarEnPrevision(Pedido pedido) {
+        Optional<Motero> mejorMotero = buscarMejorMoteroParaNuevaRuta();
 
-        if (moteroDisponible.isEmpty()) {
-            pedido.setEstado(EstadoPedido.EN_COCINA);
+        if (mejorMotero.isPresent()) {
+            asignarMoteroReal(pedido, mejorMotero.get());
             return;
         }
 
-        Motero motero = moteroDisponible.get();
+        Optional<Motero> candidatoPrevisto = rutaRepartoServicio
+                .buscarMoteroCandidatoAsignacionPrevista();
 
+        pedido.setEstado(EstadoPedido.ASIGNACION_PREVISTA);
+        pedido.setMoteroAsignado(candidatoPrevisto.orElse(null));
+    }
+
+    private void asignarMoteroReal(Pedido pedido, Motero motero) {
         pedido.setMoteroAsignado(motero);
         pedido.setEstado(EstadoPedido.ASIGNADO_MOTERO);
 
-        motero.setEstado(EstadoMotero.ESPERANDO_PREPARADO);
+        if (motero.getEstado() == EstadoMotero.DISPONIBLE
+                || motero.getEstado() == EstadoMotero.ASIGNADO) {
+            motero.setEstado(EstadoMotero.ESPERANDO_PREPARADO);
+        }
+    }
+
+    private Optional<Motero> buscarMejorMoteroParaNuevaRuta() {
+        return moteroRepositorio.findByActivoTrue()
+                .stream()
+                .filter(this::moteroPuedeRecibirPedidoReal)
+                .filter(motero -> contarPedidosActivosMotero(motero.getId()) < MAX_PEDIDOS_ACTIVOS_POR_MOTERO)
+                .min(
+                        Comparator
+                                .comparingInt((Motero motero) -> contarPedidosActivosMotero(motero.getId()))
+                                .thenComparing(Motero::getId)
+                );
+    }
+
+    private boolean moteroPuedeRecibirPedidoReal(Motero motero) {
+        return motero.getEstado() == EstadoMotero.DISPONIBLE
+                || motero.getEstado() == EstadoMotero.ESPERANDO_PREPARADO
+                || motero.getEstado() == EstadoMotero.ASIGNADO
+                || motero.getEstado() == EstadoMotero.EN_RECOGIDA;
+    }
+
+    private int contarPedidosActivosMotero(Long moteroId) {
+        return (int) pedidoRepositorio.countByMoteroAsignado_IdAndEstadoIn(
+                moteroId,
+                obtenerEstadosRutaReal()
+        );
+    }
+
+    private List<EstadoPedido> obtenerEstadosRutaReal() {
+        return List.of(
+                EstadoPedido.ASIGNADO_MOTERO,
+                EstadoPedido.PREPARADO,
+                EstadoPedido.MOTERO_AVISADO,
+                EstadoPedido.RECOGIDO_ESTABLECIMIENTO,
+                EstadoPedido.EN_CAMINO
+        );
     }
 
     private Pedido filtrarPedidoParaHamburguesas(Pedido pedidoOriginal) {

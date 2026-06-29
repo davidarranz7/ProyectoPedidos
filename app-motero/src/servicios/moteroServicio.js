@@ -15,6 +15,32 @@ export async function obtenerPedidoActivoMotero(moteroId) {
   return respuesta.data;
 }
 
+export async function obtenerRutaActivaMotero(moteroId) {
+  const respuesta = await apiCliente.get(
+    `/rutas-reparto/motero/${moteroId}/activa`
+  );
+  return respuesta.data;
+}
+
+export async function recogerRuta(rutaId) {
+  const respuesta = await apiCliente.put(`/rutas-reparto/${rutaId}/recoger`);
+  return respuesta.data;
+}
+
+export async function seleccionarPedidoRuta(pedidoRutaId) {
+  const respuesta = await apiCliente.put(
+    `/rutas-reparto/pedidos-ruta/${pedidoRutaId}/seleccionar`
+  );
+  return respuesta.data;
+}
+
+export async function entregarPedidoRuta(pedidoRutaId) {
+  const respuesta = await apiCliente.put(
+    `/rutas-reparto/pedidos-ruta/${pedidoRutaId}/entregar`
+  );
+  return respuesta.data;
+}
+
 export async function ficharMotero(moteroId) {
   const respuesta = await apiCliente.put(`/moteros/${moteroId}/fichar`);
   return respuesta.data;

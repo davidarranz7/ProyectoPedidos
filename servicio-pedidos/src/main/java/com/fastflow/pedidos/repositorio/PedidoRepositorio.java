@@ -42,4 +42,29 @@ public interface PedidoRepositorio extends JpaRepository<Pedido, Long> {
             EstadoPedido estado,
             LocalDateTime fechaProgramada
     );
+
+    long countByMoteroAsignado_IdAndEstadoIn(
+            Long moteroId,
+            List<EstadoPedido> estados
+    );
+
+    List<Pedido> findByMoteroAsignado_IdAndEstadoInOrderByFechaCreacionAsc(
+            Long moteroId,
+            List<EstadoPedido> estados
+    );
+
+    List<Pedido> findByEstadoAndMoteroAsignadoIsNullOrderByFechaCreacionAsc(
+            EstadoPedido estado
+    );
+
+    boolean existsByEstadoAndMoteroAsignado_Id(
+            EstadoPedido estado,
+            Long moteroId
+    );
+
+    long countByMoteroAsignado_IdAndFechaCreacionBetween(
+            Long moteroId,
+            LocalDateTime inicioDia,
+            LocalDateTime finDia
+    );
 }

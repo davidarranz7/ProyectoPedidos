@@ -1,20 +1,22 @@
 import { useEffect, useState } from 'react';
 import {
   desconectarMotero,
-  entregarPedidoActivo,
+  entregarPedidoRuta,
   ficharMotero,
   listarMoteros,
-  obtenerPedidoActivoMotero,
-  recogerPedidoActivo,
+  obtenerRutaActivaMotero,
+  recogerRuta,
+  seleccionarPedidoRuta,
 } from '../servicios/moteroServicio';
 
 function MoteroPagina() {
   const [moteros, setMoteros] = useState([]);
   const [moteroSeleccionado, setMoteroSeleccionado] = useState(null);
-  const [pedidoActivo, setPedidoActivo] = useState(null);
+  const [rutaActiva, setRutaActiva] = useState(null);
   const [cargando, setCargando] = useState(true);
-  const [cargandoPedido, setCargandoPedido] = useState(false);
+  const [cargandoRuta, setCargandoRuta] = useState(false);
   const [procesandoAccion, setProcesandoAccion] = useState(false);
+  const [pedidoRutaProcesandoId, setPedidoRutaProcesandoId] = useState(null);
   const [mensaje, setMensaje] = useState('');
   const [error, setError] = useState('');
 
@@ -24,9 +26,9 @@ function MoteroPagina() {
 
   useEffect(() => {
     if (moteroSeleccionado) {
-      cargarPedidoActivo(moteroSeleccionado.id);
+      cargarRutaActiva(moteroSeleccionado.id);
     } else {
-      setPedidoActivo(null);
+      setRutaActiva(null);
     }
   }, [moteroSeleccionado]);
 
@@ -53,16 +55,17 @@ function MoteroPagina() {
     }
   }
 
-  async function cargarPedidoActivo(moteroId) {
+  async function cargarRutaActiva(moteroId) {
     try {
-      setCargandoPedido(true);
-      const pedido = await obtenerPedidoActivoMotero(moteroId);
-      setPedidoActivo(pedido);
+      setCargandoRuta(true);
+      const ruta = await obtenerRutaActivaMotero(moteroId);
+      setRutaActiva(ruta);
+      setError('');
     } catch (error) {
-      setPedidoActivo(null);
-      setError('No se pudo cargar el pedido activo del motero.');
+      setRutaActiva(null);
+      setError('No se pudo cargar la ruta activa del motero.');
     } finally {
-      setCargandoPedido(false);
+      setCargandoRuta(false);
     }
   }
 
@@ -79,8 +82,9 @@ function MoteroPagina() {
       const moteroActualizado = await ficharMotero(moteroSeleccionado.id);
       setMoteroSeleccionado(moteroActualizado);
       setMensaje(`${moteroActualizado.nombre} ha fichado correctamente.`);
+
       await cargarMoteros();
-      await cargarPedidoActivo(moteroActualizado.id);
+      await cargarRutaActiva(moteroActualizado.id);
     } catch (error) {
       setError('No se pudo fichar el motero.');
     }
@@ -98,17 +102,18 @@ function MoteroPagina() {
 
       const moteroActualizado = await desconectarMotero(moteroSeleccionado.id);
       setMoteroSeleccionado(moteroActualizado);
-      setPedidoActivo(null);
+      setRutaActiva(null);
       setMensaje(`${moteroActualizado.nombre} se ha desconectado.`);
+
       await cargarMoteros();
     } catch (error) {
       setError('No se pudo desconectar el motero.');
     }
   }
 
-  async function marcarPedidoRecogido() {
-    if (!moteroSeleccionado) {
-      setError('Selecciona un motero primero.');
+  async function recogerRutaActiva() {
+    if (!rutaActiva) {
+      setError('No hay ninguna ruta activa para recoger.');
       return;
     }
 
@@ -117,42 +122,57 @@ function MoteroPagina() {
       setMensaje('');
       setError('');
 
-      const pedidoActualizado = await recogerPedidoActivo(
-        moteroSeleccionado.id
-      );
+      const rutaActualizada = await recogerRuta(rutaActiva.id);
 
-      setPedidoActivo(pedidoActualizado);
-      setMensaje('Pedido marcado como recogido. El pedido está en camino.');
+      setRutaActiva(rutaActualizada);
+      setMensaje('Ruta recogida correctamente. Ya estás en reparto.');
 
       await cargarMoteros();
     } catch (error) {
-      setError('No se pudo marcar el pedido como recogido.');
+      setError('No se pudo recoger la ruta.');
     } finally {
       setProcesandoAccion(false);
     }
   }
 
-  async function marcarPedidoEntregado() {
-    if (!moteroSeleccionado) {
-      setError('Selecciona un motero primero.');
-      return;
-    }
-
+  async function seleccionarPedidoActual(pedidoRutaId) {
     try {
-      setProcesandoAccion(true);
+      setPedidoRutaProcesandoId(pedidoRutaId);
       setMensaje('');
       setError('');
 
-      await entregarPedidoActivo(moteroSeleccionado.id);
+      const rutaActualizada = await seleccionarPedidoRuta(pedidoRutaId);
 
-      setPedidoActivo(null);
-      setMensaje('Pedido entregado correctamente.');
+      setRutaActiva(rutaActualizada);
+      setMensaje('Pedido seleccionado como entrega actual.');
+    } catch (error) {
+      setError('No se pudo seleccionar este pedido.');
+    } finally {
+      setPedidoRutaProcesandoId(null);
+    }
+  }
+
+  async function entregarPedidoDeRuta(pedidoRutaId) {
+    try {
+      setPedidoRutaProcesandoId(pedidoRutaId);
+      setMensaje('');
+      setError('');
+
+      const rutaActualizada = await entregarPedidoRuta(pedidoRutaId);
+
+      if (rutaActualizada.estado === 'FINALIZADA') {
+        setRutaActiva(null);
+        setMensaje('Ruta completada. Todos los pedidos han sido entregados.');
+      } else {
+        setRutaActiva(rutaActualizada);
+        setMensaje('Pedido entregado correctamente.');
+      }
 
       await cargarMoteros();
     } catch (error) {
-      setError('No se pudo marcar el pedido como entregado.');
+      setError('No se pudo entregar el pedido.');
     } finally {
-      setProcesandoAccion(false);
+      setPedidoRutaProcesandoId(null);
     }
   }
 
@@ -186,42 +206,217 @@ function MoteroPagina() {
     return 'estado ocupado';
   }
 
-  function claseEstadoPedido(estado) {
-    if (estado === 'ASIGNADO_MOTERO') {
-      return 'estado-pedido asignado';
+  function claseEstadoPedidoRuta(estado) {
+    if (estado === 'ENTREGADO') {
+      return 'estado-pedido entregado';
     }
 
-    if (estado === 'PREPARADO' || estado === 'MOTERO_AVISADO') {
-      return 'estado-pedido preparado';
+    if (estado === 'EN_ENTREGA') {
+      return 'estado-pedido actual';
     }
 
-    if (estado === 'RECOGIDO_ESTABLECIMIENTO' || estado === 'EN_CAMINO') {
-      return 'estado-pedido camino';
-    }
-
-    return 'estado-pedido neutro';
+    return 'estado-pedido asignado';
   }
 
-  function puedeRecogerPedido() {
-    if (!pedidoActivo) {
-      return false;
+  function obtenerTextoPedidoRuta(estado) {
+    if (estado === 'EN_ENTREGA') {
+      return 'ENTREGA ACTUAL';
     }
 
-    return (
-      pedidoActivo.estado === 'ASIGNADO_MOTERO' ||
-      pedidoActivo.estado === 'PREPARADO' ||
-      pedidoActivo.estado === 'MOTERO_AVISADO'
+    if (estado === 'ENTREGADO') {
+      return 'ENTREGADO';
+    }
+
+    return 'PENDIENTE';
+  }
+
+  function obtenerTotalProductos(pedido) {
+    return pedido.lineas.reduce((total, linea) => total + linea.cantidad, 0);
+  }
+
+  function contarEntregados() {
+    if (!rutaActiva) {
+      return 0;
+    }
+
+    return rutaActiva.pedidos.filter(
+      (pedidoRuta) => pedidoRuta.estado === 'ENTREGADO'
+    ).length;
+  }
+
+  function obtenerPedidoActual() {
+    if (!rutaActiva) {
+      return null;
+    }
+
+    return rutaActiva.pedidos.find(
+      (pedidoRuta) => pedidoRuta.estado === 'EN_ENTREGA'
     );
   }
 
-  function puedeEntregarPedido() {
-    if (!pedidoActivo) {
-      return false;
+  function puedeRecogerRuta() {
+    return rutaActiva && rutaActiva.estado === 'AVISADA';
+  }
+
+  function puedeSeleccionarPedido(pedidoRuta) {
+    return (
+      rutaActiva &&
+      rutaActiva.estado === 'EN_REPARTO' &&
+      pedidoRuta.estado === 'PENDIENTE'
+    );
+  }
+
+  function puedeEntregarPedido(pedidoRuta) {
+    return (
+      rutaActiva &&
+      rutaActiva.estado === 'EN_REPARTO' &&
+      pedidoRuta.estado === 'EN_ENTREGA'
+    );
+  }
+
+  function renderAvisoRuta() {
+    if (!rutaActiva) {
+      return null;
     }
 
+    if (rutaActiva.estado === 'ABIERTA') {
+      return (
+        <p className="aviso-ruta-motero">
+          El restaurante todavía está preparando la ruta.
+        </p>
+      );
+    }
+
+    if (rutaActiva.estado === 'AVISADA') {
+      return (
+        <p className="aviso-ruta-motero listo">
+          La ruta ya está lista para recoger.
+        </p>
+      );
+    }
+
+    if (rutaActiva.estado === 'EN_REPARTO') {
+      const pedidoActual = obtenerPedidoActual();
+
+      return (
+        <p className="aviso-ruta-motero reparto">
+          {pedidoActual
+            ? `Ahora estás llevando ${pedidoActual.pedido.numeroPedido}.`
+            : 'Ruta en reparto. Elige qué pedido estás llevando ahora.'}
+        </p>
+      );
+    }
+
+    return null;
+  }
+
+  function renderPedidoRuta(pedidoRuta) {
+    const pedido = pedidoRuta.pedido;
+
     return (
-      pedidoActivo.estado === 'RECOGIDO_ESTABLECIMIENTO' ||
-      pedidoActivo.estado === 'EN_CAMINO'
+      <article
+        key={pedidoRuta.id}
+        className={
+          pedidoRuta.estado === 'EN_ENTREGA'
+            ? 'pedido-activo-motero pedido-en-entrega'
+            : 'pedido-activo-motero'
+        }
+      >
+        <div className="pedido-activo-cabecera">
+          <div>
+            <span>
+              Orden {pedidoRuta.ordenEntrega} · {obtenerTextoOrigen(pedido)}
+            </span>
+            <h3>{pedido.numeroPedido}</h3>
+          </div>
+
+          <p className={claseEstadoPedidoRuta(pedidoRuta.estado)}>
+            {obtenerTextoPedidoRuta(pedidoRuta.estado)}
+          </p>
+        </div>
+
+        <div className="datos-pedido-motero">
+          <div>
+            <small>Cliente</small>
+            <strong>{pedido.clienteNombre || 'Sin nombre'}</strong>
+          </div>
+
+          <div>
+            <small>Teléfono</small>
+            <strong>{pedido.clienteTelefono || 'Sin teléfono'}</strong>
+          </div>
+
+          <div>
+            <small>Productos</small>
+            <strong>{obtenerTotalProductos(pedido)}</strong>
+          </div>
+
+          <div className="direccion-pedido-motero">
+            <small>Dirección</small>
+            <strong>{pedido.clienteDireccion || 'Sin dirección'}</strong>
+          </div>
+        </div>
+
+        <div className="productos-pedido-motero">
+          <h4>Productos</h4>
+
+          {pedido.lineas.map((linea) => (
+            <article key={linea.id} className="linea-pedido-motero">
+              <div>
+                <strong>
+                  <span>{linea.cantidad}x</span> {linea.producto.nombre}
+                </strong>
+                <small>{linea.producto.categoria}</small>
+              </div>
+
+              {linea.modificaciones.length > 0 && (
+                <ul>
+                  {linea.modificaciones.map((modificacion) => (
+                    <li key={modificacion.id}>
+                      <strong>{modificacion.tipo}</strong>{' '}
+                      {modificacion.descripcion}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </article>
+          ))}
+        </div>
+
+        <div className="acciones-pedido-motero">
+          {puedeSeleccionarPedido(pedidoRuta) && (
+            <button
+              type="button"
+              className="boton-secundario-motero"
+              disabled={pedidoRutaProcesandoId === pedidoRuta.id}
+              onClick={() => seleccionarPedidoActual(pedidoRuta.id)}
+            >
+              {pedidoRutaProcesandoId === pedidoRuta.id
+                ? 'Seleccionando...'
+                : 'Estoy llevando este'}
+            </button>
+          )}
+
+          {puedeEntregarPedido(pedidoRuta) && (
+            <button
+              type="button"
+              className="boton-principal-motero"
+              disabled={pedidoRutaProcesandoId === pedidoRuta.id}
+              onClick={() => entregarPedidoDeRuta(pedidoRuta.id)}
+            >
+              {pedidoRutaProcesandoId === pedidoRuta.id
+                ? 'Entregando...'
+                : 'Entregar pedido'}
+            </button>
+          )}
+
+          {pedidoRuta.estado === 'ENTREGADO' && (
+            <span className="pedido-entregado-motero">
+              Entregado
+            </span>
+          )}
+        </div>
+      </article>
     );
   }
 
@@ -231,7 +426,8 @@ function MoteroPagina() {
         <p>App independiente</p>
         <h1>App Motero</h1>
         <span>
-          Aquí el motero ficha, consulta su pedido activo y actualiza el reparto.
+          Aquí el motero ficha, consulta su ruta activa y entregará pedidos uno
+          por uno.
         </span>
       </section>
 
@@ -282,6 +478,11 @@ function MoteroPagina() {
               <strong>{moteroSeleccionado.estado}</strong>
             </div>
 
+            <div>
+              <small>Ruta</small>
+              <strong>{rutaActiva ? rutaActiva.estado : 'Sin ruta'}</strong>
+            </div>
+
             <div className="acciones-motero">
               <button className="boton-fichar" onClick={fichar}>
                 Fichar / poner disponible
@@ -297,12 +498,12 @@ function MoteroPagina() {
 
       <section className="panel-motero">
         <div className="titulo-pedido-activo">
-          <h2>Pedido asignado</h2>
+          <h2>Ruta activa</h2>
 
           {moteroSeleccionado && (
             <button
               type="button"
-              onClick={() => cargarPedidoActivo(moteroSeleccionado.id)}
+              onClick={() => cargarRutaActiva(moteroSeleccionado.id)}
             >
               Actualizar
             </button>
@@ -310,110 +511,61 @@ function MoteroPagina() {
         </div>
 
         {!moteroSeleccionado && (
-          <p className="vacio">Selecciona un motero para ver su pedido.</p>
+          <p className="vacio">Selecciona un motero para ver su ruta.</p>
         )}
 
-        {moteroSeleccionado && cargandoPedido && (
-          <p className="vacio">Cargando pedido activo...</p>
+        {moteroSeleccionado && cargandoRuta && (
+          <p className="vacio">Cargando ruta activa...</p>
         )}
 
-        {moteroSeleccionado && !cargandoPedido && !pedidoActivo && (
-          <p className="vacio">
-            Este motero no tiene ningún pedido activo asignado.
-          </p>
+        {moteroSeleccionado && !cargandoRuta && !rutaActiva && (
+          <p className="vacio">Este motero no tiene ninguna ruta activa.</p>
         )}
 
-        {moteroSeleccionado && !cargandoPedido && pedidoActivo && (
-          <article className="pedido-activo-motero">
-            <div className="pedido-activo-cabecera">
+        {moteroSeleccionado && !cargandoRuta && rutaActiva && (
+          <section>
+            <div className="resumen-ruta-motero">
               <div>
-                <span>{obtenerTextoOrigen(pedidoActivo)}</span>
-                <h3>{pedidoActivo.numeroPedido}</h3>
-              </div>
-
-              <p className={claseEstadoPedido(pedidoActivo.estado)}>
-                {pedidoActivo.estado}
-              </p>
-            </div>
-
-            <div className="datos-pedido-motero">
-              <div>
-                <small>Cliente</small>
-                <strong>{pedidoActivo.clienteNombre || 'Sin nombre'}</strong>
+                <small>Ruta</small>
+                <strong>#{rutaActiva.id}</strong>
               </div>
 
               <div>
-                <small>Teléfono</small>
-                <strong>{pedidoActivo.clienteTelefono || 'Sin teléfono'}</strong>
+                <small>Estado</small>
+                <strong>{rutaActiva.estado}</strong>
               </div>
 
-              <div className="direccion-pedido-motero">
-                <small>Dirección</small>
+              <div>
+                <small>Entregados</small>
                 <strong>
-                  {pedidoActivo.clienteDireccion || 'Sin dirección'}
+                  {contarEntregados()}/{rutaActiva.pedidos.length}
                 </strong>
               </div>
             </div>
 
-            <div className="productos-pedido-motero">
-              <h4>Productos</h4>
+            {renderAvisoRuta()}
 
-              {pedidoActivo.lineas.map((linea) => (
-                <article key={linea.id} className="linea-pedido-motero">
-                  <div>
-                    <strong>
-                      <span>{linea.cantidad}x</span> {linea.producto.nombre}
-                    </strong>
-                    <small>{linea.producto.categoria}</small>
-                  </div>
-
-                  {linea.modificaciones.length > 0 && (
-                    <ul>
-                      {linea.modificaciones.map((modificacion) => (
-                        <li key={modificacion.id}>
-                          <strong>{modificacion.tipo}</strong>{' '}
-                          {modificacion.descripcion}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </article>
-              ))}
-            </div>
-
-            <div className="acciones-pedido-motero">
-              <button type="button" className="boton-secundario-motero">
-                Ver ruta
-              </button>
-
-              {puedeRecogerPedido() && (
+            <div className="acciones-ruta-motero">
+              {puedeRecogerRuta() && (
                 <button
                   type="button"
-                  className="boton-principal-motero"
+                  className="boton-ruta-principal"
                   disabled={procesandoAccion}
-                  onClick={marcarPedidoRecogido}
+                  onClick={recogerRutaActiva}
                 >
-                  {procesandoAccion ? 'Actualizando...' : 'Pedido recogido'}
-                </button>
-              )}
-
-              {puedeEntregarPedido() && (
-                <button
-                  type="button"
-                  className="boton-principal-motero"
-                  disabled={procesandoAccion}
-                  onClick={marcarPedidoEntregado}
-                >
-                  {procesandoAccion ? 'Actualizando...' : 'Pedido entregado'}
+                  {procesandoAccion
+                    ? 'Recogiendo ruta...'
+                    : 'Recoger ruta / salir a reparto'}
                 </button>
               )}
             </div>
 
-            <p className="nota-motero">
-              Cuando el pedido se entrega, desaparece de esta pantalla porque
-              pasa a historial.
-            </p>
-          </article>
+            <div className="lista-pedidos-ruta-motero">
+              {rutaActiva.pedidos.map((pedidoRuta) =>
+                renderPedidoRuta(pedidoRuta)
+              )}
+            </div>
+          </section>
         )}
       </section>
     </main>

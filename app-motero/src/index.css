@@ -369,6 +369,113 @@ button {
   font-weight: 700;
 }
 
+.resumen-ruta-motero {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 11px;
+  margin-bottom: 14px;
+}
+
+.resumen-ruta-motero div {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 13px;
+}
+
+.resumen-ruta-motero small {
+  display: block;
+  color: #6b7280;
+  font-weight: 900;
+  margin-bottom: 4px;
+}
+
+.resumen-ruta-motero strong {
+  display: block;
+  color: #111827;
+  font-size: 18px;
+}
+
+.lista-pedidos-ruta-motero {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.acciones-ruta-motero {
+  margin-bottom: 14px;
+}
+
+.boton-ruta-principal {
+  width: 100%;
+  border: none;
+  background: #16a34a;
+  color: white;
+  border-radius: 16px;
+  padding: 16px;
+  font-weight: 900;
+  font-size: 16px;
+}
+
+.boton-ruta-principal:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.aviso-ruta-motero {
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 14px;
+  padding: 13px;
+  font-weight: 900;
+  margin-bottom: 14px;
+}
+
+.aviso-ruta-motero.listo {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.aviso-ruta-motero.reparto {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.pedido-en-entrega {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+.estado-pedido.actual {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.estado-pedido.entregado {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.pedido-entregado-motero {
+  width: 100%;
+  border-radius: 14px;
+  background: #dcfce7;
+  color: #166534;
+  padding: 13px;
+  text-align: center;
+  font-weight: 900;
+}
+
+.acciones-pedido-motero {
+  display: flex;
+  gap: 10px;
+}
+
+.acciones-pedido-motero button,
+.acciones-pedido-motero span {
+  flex: 1;
+}
+
 @media (max-width: 700px) {
   .lista-moteros,
   .estado-actual,

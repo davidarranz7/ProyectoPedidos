@@ -23,6 +23,7 @@ public class MoteroServicio {
     private final MoteroRepositorio moteroRepositorio;
     private final PedidoRepositorio pedidoRepositorio;
     private final PedidoMapper pedidoMapper;
+    private final RutaRepartoServicio rutaRepartoServicio;
 
     @Transactional(readOnly = true)
     public List<MoteroResponse> listarMoteros() {
@@ -41,6 +42,8 @@ public class MoteroServicio {
         Motero motero = buscarMotero(moteroId);
 
         motero.setEstado(EstadoMotero.DISPONIBLE);
+
+        rutaRepartoServicio.repartirPedidosPrevistosEntreMoterosDisponibles();
 
         Motero moteroGuardado = moteroRepositorio.save(motero);
 

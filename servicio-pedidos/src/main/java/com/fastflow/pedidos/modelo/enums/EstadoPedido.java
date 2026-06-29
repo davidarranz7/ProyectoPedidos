@@ -4,6 +4,7 @@ public enum EstadoPedido {
     PROGRAMADO,
     RECIBIDO,
     EN_COCINA,
+    ASIGNACION_PREVISTA,
     ASIGNADO_MOTERO,
     PREPARADO,
     MOTERO_AVISADO,
