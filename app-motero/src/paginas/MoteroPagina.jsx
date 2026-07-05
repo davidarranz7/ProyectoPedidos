@@ -84,6 +84,10 @@ function MoteroPagina() {
   }
 
   async function actualizarAutomaticamente(moteroId) {
+    if (procesandoAccion || pedidoRutaProcesandoId) {
+      return;
+    }
+
     try {
       const datosMoteros = await listarMoteros();
       setMoteros(datosMoteros);
@@ -99,7 +103,7 @@ function MoteroPagina() {
       const ruta = await obtenerRutaActivaMotero(moteroId);
       setRutaActiva(ruta);
     } catch (error) {
-      // No mostramos error en autoactualización para no molestar al motero.
+      // La actualización automática no muestra error para no molestar al motero.
     }
   }
 

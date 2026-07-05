@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import {
   avisarRuta,
   listarPedidosHd,
@@ -14,17 +14,27 @@ function HdInternoPagina() {
   const [cargando, setCargando] = useState(true);
   const [procesandoAccion, setProcesandoAccion] = useState(false);
   const [rutaProcesandoId, setRutaProcesandoId] = useState(null);
+  const [rutasAvisadasAnimadas, setRutasAvisadasAnimadas] = useState([]);
+  const [pedidosEntregadosAnimados, setPedidosEntregadosAnimados] = useState([]);
+  const [ahora, setAhora] = useState(Date.now());
   const [error, setError] = useState('');
   const [mensaje, setMensaje] = useState('');
 
   useEffect(() => {
     cargarPedidos();
 
-    const intervalo = setInterval(() => {
+    const intervaloPedidos = setInterval(() => {
       cargarPedidos();
     }, 5000);
 
-    return () => clearInterval(intervalo);
+    const intervaloReloj = setInterval(() => {
+      setAhora(Date.now());
+    }, 1000);
+
+    return () => {
+      clearInterval(intervaloPedidos);
+      clearInterval(intervaloReloj);
+    };
   }, []);
 
   async function cargarPedidos() {
@@ -34,25 +44,58 @@ function HdInternoPagina() {
         listarRutasActivas(),
       ]);
 
-      setPedidos(datosPedidos);
-      setRutasActivas(datosRutas);
+      setPedidos(datosPedidos || []);
 
-      if (pedidoSeleccionado) {
-        const actualizado = datosPedidos.find(
-          (pedido) => pedido.id === pedidoSeleccionado.id
-        );
-
-        if (actualizado) {
-          setPedidoSeleccionado(actualizado);
-        }
-      }
+      setRutasActivas((rutasAnteriores) => {
+        detectarPedidosEntregadosNuevos(rutasAnteriores, datosRutas || []);
+        return datosRutas || [];
+      });
 
       setError('');
     } catch (error) {
-      setError('No se pudieron cargar los pedidos HD.');
+      setError('No se pudieron cargar los pedidos de Popeyes Delivery.');
     } finally {
       setCargando(false);
     }
+  }
+
+  function detectarPedidosEntregadosNuevos(rutasAnteriores, rutasNuevas) {
+    const entregadosAntes = new Set();
+
+    rutasAnteriores.forEach((ruta) => {
+      (ruta.pedidos || []).forEach((pedidoRuta) => {
+        if (pedidoRuta.estado === 'ENTREGADO') {
+          entregadosAntes.add(pedidoRuta.id);
+        }
+      });
+    });
+
+    const nuevosEntregados = [];
+
+    rutasNuevas.forEach((ruta) => {
+      (ruta.pedidos || []).forEach((pedidoRuta) => {
+        if (
+          pedidoRuta.estado === 'ENTREGADO' &&
+          !entregadosAntes.has(pedidoRuta.id)
+        ) {
+          nuevosEntregados.push(pedidoRuta.id);
+        }
+      });
+    });
+
+    if (nuevosEntregados.length === 0) {
+      return;
+    }
+
+    setPedidosEntregadosAnimados((actuales) => [
+      ...new Set([...actuales, ...nuevosEntregados]),
+    ]);
+
+    setTimeout(() => {
+      setPedidosEntregadosAnimados((actuales) =>
+        actuales.filter((id) => !nuevosEntregados.includes(id))
+      );
+    }, 3500);
   }
 
   async function marcarPreparadoYAvisarMotero() {
@@ -65,12 +108,43 @@ function HdInternoPagina() {
       setMensaje('');
       setError('');
 
+      const itemRuta = buscarItemRutaPedido(pedidoSeleccionado.id);
+
+      if (itemRuta?.ruta) {
+        if (!puedeAvisarRuta(itemRuta.ruta)) {
+          setMensaje('Esta ruta ya no se puede avisar desde el pedido.');
+          await cargarPedidos();
+          return;
+        }
+
+        activarAnimacionRutaAvisada(itemRuta.ruta.id);
+
+        const rutaActualizada = await avisarRuta(itemRuta.ruta.id);
+
+        const pedidoRutaActualizado = rutaActualizada.pedidos?.find(
+          (pedidoRuta) => pedidoRuta.pedido.id === pedidoSeleccionado.id
+        );
+
+        if (pedidoRutaActualizado) {
+          setPedidoSeleccionado(pedidoRutaActualizado.pedido);
+        }
+
+        setMensaje(
+          `Ruta de ${
+            rutaActualizada.motero?.nombre || 'motero'
+          } enviada al repartidor.`
+        );
+
+        await cargarPedidos();
+        return;
+      }
+
       const pedidoActualizado = await marcarPedidoPreparado(
         pedidoSeleccionado.id
       );
 
       setPedidoSeleccionado(pedidoActualizado);
-      setMensaje('Pedido preparado. Motero avisado correctamente.');
+      setMensaje('Pedido preparado correctamente.');
 
       await cargarPedidos();
     } catch (error) {
@@ -86,10 +160,12 @@ function HdInternoPagina() {
       setMensaje('');
       setError('');
 
+      activarAnimacionRutaAvisada(ruta.id);
+
       await avisarRuta(ruta.id);
 
       setMensaje(
-        `Ruta de ${ruta.motero?.nombre || 'motero'} preparada y motero avisado.`
+        `Ruta de ${ruta.motero?.nombre || 'motero'} enviada al repartidor.`
       );
 
       await cargarPedidos();
@@ -98,6 +174,16 @@ function HdInternoPagina() {
     } finally {
       setRutaProcesandoId(null);
     }
+  }
+
+  function activarAnimacionRutaAvisada(rutaId) {
+    setRutasAvisadasAnimadas((actuales) => [...new Set([...actuales, rutaId])]);
+
+    setTimeout(() => {
+      setRutasAvisadasAnimadas((actuales) =>
+        actuales.filter((id) => id !== rutaId)
+      );
+    }, 3200);
   }
 
   const pedidosRutasActivas = rutasActivas.flatMap((ruta) =>
@@ -123,13 +209,13 @@ function HdInternoPagina() {
   );
 
   const pedidosAsignacionPrevista = pedidos.filter(
-    (pedido) => pedido.estado === 'ASIGNACION_PREVISTA'
+    (pedido) => pedido.estado === 'PENDIENTE_ASIGNACION'
   );
 
   const pedidosSinRutaTemporal = pedidos.filter(
     (pedido) =>
       pedido.estado !== 'PROGRAMADO' &&
-      pedido.estado !== 'ASIGNACION_PREVISTA' &&
+      pedido.estado !== 'PENDIENTE_ASIGNACION' &&
       pedido.estado !== 'ENTREGADO' &&
       pedido.estado !== 'CANCELADO' &&
       !pedido.moteroAsignado &&
@@ -150,6 +236,10 @@ function HdInternoPagina() {
   );
 
   function obtenerTextoOrigen(pedido) {
+    if (!pedido?.plataforma) {
+      return 'DELIVERY';
+    }
+
     if (pedido.plataforma === 'JUST_EAT') {
       return 'JUST EAT';
     }
@@ -158,7 +248,49 @@ function HdInternoPagina() {
       return 'UBER EATS';
     }
 
+    if (pedido.plataforma === 'POPEYES_DELIVERY') {
+      return 'POPEYES';
+    }
+
+    if (pedido.plataforma === 'MANUAL_HD') {
+      return 'MANUAL HD';
+    }
+
     return pedido.plataforma;
+  }
+
+  function obtenerTextoEstadoPedido(estado) {
+    if (estado === 'PROGRAMADO') return 'Programado';
+    if (estado === 'RECIBIDO') return 'Recibido';
+    if (estado === 'EN_PREPARACION') return 'En preparación';
+    if (estado === 'PENDIENTE_ASIGNACION') return 'Pendiente';
+    if (estado === 'ASIGNADO_MOTERO') return 'Asignado';
+    if (estado === 'PREPARADO') return 'Preparado';
+    if (estado === 'MOTERO_AVISADO') return 'Avisado';
+    if (estado === 'RECOGIDO_ESTABLECIMIENTO') return 'Recogido';
+    if (estado === 'EN_CAMINO') return 'En camino';
+    if (estado === 'ENTREGADO') return 'Entregado';
+    if (estado === 'INCIDENCIA') return 'Incidencia';
+    if (estado === 'CANCELADO') return 'Cancelado';
+
+    return estado || 'Sin estado';
+  }
+
+  function obtenerTextoEstadoRuta(ruta) {
+    if (ruta.estado === 'ABIERTA') return 'Pendiente de recoger';
+    if (ruta.estado === 'AVISADA') return 'Motero avisado';
+    if (ruta.estado === 'EN_REPARTO') return 'En reparto';
+    if (ruta.estado === 'FINALIZADA') return 'Finalizada';
+
+    return ruta.estado;
+  }
+
+  function obtenerTextoEstadoPedidoRuta(estado) {
+    if (estado === 'EN_ENTREGA') return 'Actual';
+    if (estado === 'ENTREGADO') return 'Entregado';
+    if (estado === 'PENDIENTE') return 'Pendiente';
+
+    return estado;
   }
 
   function obtenerHora(fecha) {
@@ -173,24 +305,154 @@ function HdInternoPagina() {
   }
 
   function obtenerTotalProductos(pedido) {
-    return pedido.lineas.reduce((total, linea) => total + linea.cantidad, 0);
+    if (!pedido?.lineas) {
+      return 0;
+    }
+
+    return pedido.lineas.reduce(
+      (total, linea) => total + Number(linea.cantidad || 0),
+      0
+    );
+  }
+
+  function obtenerNombreProductoLinea(linea) {
+    return linea.nombreProducto || linea.producto?.nombre || 'Producto';
+  }
+
+  function obtenerCategoriaProductoLinea(linea) {
+    return (
+      linea.producto?.categoria ||
+      linea.codigoProductoExterno ||
+      'Producto externo'
+    );
+  }
+
+  function formatearPrecio(precio) {
+    if (precio === null || precio === undefined || precio === '') {
+      return '';
+    }
+
+    return `${Number(precio || 0).toFixed(2)} €`;
+  }
+
+  function obtenerFechaInicioEspera(pedido) {
+    return (
+      pedido.fechaPreparado ||
+      pedido.fechaRecogidoEstablecimiento ||
+      pedido.fechaCreacion
+    );
+  }
+
+  function obtenerFechaFinEspera(pedido, pedidoRuta) {
+    if (pedidoRuta?.estado === 'ENTREGADO') {
+      return pedidoRuta.fechaEntregado || pedido.fechaEntregado || null;
+    }
+
+    if (pedido.estado === 'ENTREGADO') {
+      return pedido.fechaEntregado || pedidoRuta?.fechaEntregado || null;
+    }
+
+    return null;
+  }
+
+  function obtenerMinutosEspera(pedido, pedidoRuta = null) {
+    const fechaInicio = obtenerFechaInicioEspera(pedido);
+
+    if (!fechaInicio) {
+      return 0;
+    }
+
+    const fechaFin = obtenerFechaFinEspera(pedido, pedidoRuta);
+    const tiempoFinal = fechaFin ? new Date(fechaFin).getTime() : ahora;
+    const diferencia = tiempoFinal - new Date(fechaInicio).getTime();
+
+    if (diferencia <= 0) {
+      return 0;
+    }
+
+    return Math.floor(diferencia / 60000);
+  }
+
+  function formatearEsperaPedido(pedido, pedidoRuta = null) {
+    const minutos = obtenerMinutosEspera(pedido, pedidoRuta);
+
+    if (minutos < 1) {
+      return '0 min';
+    }
+
+    if (minutos < 60) {
+      return `${minutos} min`;
+    }
+
+    const horas = Math.floor(minutos / 60);
+    const resto = minutos % 60;
+
+    if (resto === 0) {
+      return `${horas} h`;
+    }
+
+    return `${horas} h ${resto} min`;
+  }
+
+  function claseEsperaPedido(pedido, pedidoRuta = null) {
+    const minutos = obtenerMinutosEspera(pedido, pedidoRuta);
+
+    if (pedidoRuta?.estado === 'ENTREGADO' || pedido.estado === 'ENTREGADO') {
+      return 'contador-espera-pedido finalizado';
+    }
+
+    if (minutos >= 15) {
+      return 'contador-espera-pedido urgente';
+    }
+
+    if (minutos >= 8) {
+      return 'contador-espera-pedido aviso';
+    }
+
+    return 'contador-espera-pedido normal';
+  }
+
+  function ordenarPedidosRuta(pedidosRuta) {
+    return [...(pedidosRuta || [])].sort((a, b) => {
+      if (a.estado === 'ENTREGADO' && b.estado !== 'ENTREGADO') return 1;
+      if (a.estado !== 'ENTREGADO' && b.estado === 'ENTREGADO') return -1;
+
+      return obtenerMinutosEspera(b.pedido, b) - obtenerMinutosEspera(a.pedido, a);
+    });
+  }
+
+  function obtenerMayorEsperaRuta(ruta) {
+    const pedidosPendientes = (ruta.pedidos || []).filter(
+      (pedidoRuta) => pedidoRuta.estado !== 'ENTREGADO'
+    );
+
+    if (pedidosPendientes.length === 0) {
+      return '0 min';
+    }
+
+    const minutos = Math.max(
+      ...pedidosPendientes.map((pedidoRuta) =>
+        obtenerMinutosEspera(pedidoRuta.pedido, pedidoRuta)
+      )
+    );
+
+    if (minutos < 60) {
+      return `${minutos} min`;
+    }
+
+    const horas = Math.floor(minutos / 60);
+    const resto = minutos % 60;
+
+    return resto === 0 ? `${horas} h` : `${horas} h ${resto} min`;
   }
 
   function claseEstadoPedido(estado) {
-    if (estado === 'PROGRAMADO') {
-      return 'estado-hd programado';
-    }
+    if (estado === 'PROGRAMADO') return 'estado-hd programado';
+    if (estado === 'PENDIENTE_ASIGNACION') return 'estado-hd prevista';
+    if (estado === 'ASIGNADO_MOTERO') return 'estado-hd asignado';
 
-    if (estado === 'ASIGNACION_PREVISTA') {
-      return 'estado-hd prevista';
-    }
-
-    if (estado === 'ASIGNADO_MOTERO') {
-      return 'estado-hd asignado';
-    }
-
-    if (estado === 'EN_COCINA') {
-      return 'estado-hd cocina';
+    if (estado === 'EN_PREPARACION' || estado === 'RECIBIDO') {
+      return 'estado-hd preparacion';
     }
 
     if (estado === 'PREPARADO' || estado === 'MOTERO_AVISADO') {
@@ -201,29 +463,16 @@ function HdInternoPagina() {
       return 'estado-hd en-camino';
     }
 
-    if (estado === 'ENTREGADO') {
-      return 'estado-hd entregado';
-    }
-
-    if (estado === 'CANCELADO') {
-      return 'estado-hd cancelado';
-    }
+    if (estado === 'ENTREGADO') return 'estado-hd entregado';
+    if (estado === 'CANCELADO') return 'estado-hd cancelado';
 
     return 'estado-hd neutro';
   }
 
   function claseTarjetaPedido(pedido) {
-    if (pedido.estado === 'PROGRAMADO') {
-      return 'tarjeta-hd programado';
-    }
-
-    if (pedido.estado === 'ASIGNACION_PREVISTA') {
-      return 'tarjeta-hd prevista';
-    }
-
-    if (pedido.estado === 'ENTREGADO') {
-      return 'tarjeta-hd entregado';
-    }
+    if (pedido.estado === 'PROGRAMADO') return 'tarjeta-hd programado';
+    if (pedido.estado === 'PENDIENTE_ASIGNACION') return 'tarjeta-hd prevista';
+    if (pedido.estado === 'ENTREGADO') return 'tarjeta-hd entregado';
 
     if (
       pedido.estado === 'EN_CAMINO' ||
@@ -232,7 +481,7 @@ function HdInternoPagina() {
       return 'tarjeta-hd en-camino';
     }
 
-    if (pedido.estado === 'MOTERO_AVISADO') {
+    if (pedido.estado === 'MOTERO_AVISADO' || pedido.estado === 'PREPARADO') {
       return 'tarjeta-hd preparado';
     }
 
@@ -244,8 +493,15 @@ function HdInternoPagina() {
       return false;
     }
 
+    const itemRuta = buscarItemRutaPedido(pedido.id);
+
+    if (itemRuta?.ruta) {
+      return puedeAvisarRuta(itemRuta.ruta);
+    }
+
     return (
-      pedido.estado === 'EN_COCINA' ||
+      pedido.estado === 'RECIBIDO' ||
+      pedido.estado === 'EN_PREPARACION' ||
       pedido.estado === 'ASIGNADO_MOTERO' ||
       pedido.estado === 'PREPARADO'
     );
@@ -256,49 +512,67 @@ function HdInternoPagina() {
       return false;
     }
 
-    return ruta.pedidos.some(
+    return (ruta.pedidos || []).some(
       (pedidoRuta) =>
         pedidoRuta.pedido.estado === 'ASIGNADO_MOTERO' ||
         pedidoRuta.pedido.estado === 'PREPARADO' ||
-        pedidoRuta.pedido.estado === 'EN_COCINA'
+        pedidoRuta.pedido.estado === 'EN_PREPARACION' ||
+        pedidoRuta.pedido.estado === 'RECIBIDO'
     );
   }
 
-  function obtenerTextoEstadoRuta(ruta) {
-    if (ruta.estado === 'ABIERTA') {
-      return 'Pendiente de preparar';
-    }
+  function obtenerClaseOrbeRuta(ruta) {
+    if (ruta.estado === 'EN_REPARTO') return 'orbe-motero recogiendo';
+    if (ruta.estado === 'AVISADA') return 'orbe-motero avisado';
+    if (ruta.estado === 'FINALIZADA') return 'orbe-motero finalizado';
 
-    if (ruta.estado === 'AVISADA') {
-      return 'Motero avisado';
+    return 'orbe-motero espera';
+  }
+
+  function obtenerClasePanelMotero(ruta) {
+    if (ruta.estado === 'EN_REPARTO') return 'panel-motero-carril en-reparto';
+    if (ruta.estado === 'AVISADA') return 'panel-motero-carril avisado';
+    if (ruta.estado === 'FINALIZADA') return 'panel-motero-carril finalizado';
+
+    return 'panel-motero-carril pendiente';
+  }
+
+  function obtenerClaseCarrilRuta(ruta) {
+    const clases = ['carril-motero-ruta'];
+
+    if (rutasAvisadasAnimadas.includes(ruta.id)) {
+      clases.push('ruta-recien-avisada');
     }
 
     if (ruta.estado === 'EN_REPARTO') {
-      return 'En reparto';
+      clases.push('ruta-en-reparto');
     }
 
-    return ruta.estado;
+    return clases.join(' ');
   }
 
-  function obtenerTextoEstadoPedidoRuta(estado) {
-    if (estado === 'EN_ENTREGA') {
-      return 'Entrega actual';
+  function obtenerClaseTarjetaRuta(pedido, pedidoRuta) {
+    const clases = [claseTarjetaPedido(pedido), 'tarjeta-ruta-carril'];
+
+    if (pedidosEntregadosAnimados.includes(pedidoRuta.id)) {
+      clases.push('pedido-recien-entregado');
     }
 
-    if (estado === 'ENTREGADO') {
-      return 'Entregado';
+    if (pedidoRuta.estado === 'ENTREGADO') {
+      clases.push('pedido-finalizado');
     }
 
-    if (estado === 'PENDIENTE') {
-      return 'Pendiente en ruta';
-    }
-
-    return estado;
+    return clases.join(' ');
   }
 
   function contarEntregadosRuta(ruta) {
-    return ruta.pedidos.filter((pedidoRuta) => pedidoRuta.estado === 'ENTREGADO')
-      .length;
+    return (ruta.pedidos || []).filter(
+      (pedidoRuta) => pedidoRuta.estado === 'ENTREGADO'
+    ).length;
+  }
+
+  function buscarItemRutaPedido(pedidoId) {
+    return pedidosRutasActivas.find((item) => item.pedido.id === pedidoId);
   }
 
   function abrirDetallePedido(pedido) {
@@ -311,6 +585,41 @@ function HdInternoPagina() {
     setPedidoSeleccionado(null);
     setMensaje('');
     setError('');
+  }
+
+  function renderEstadoVisualPedidoRuta(pedidoRuta, ruta) {
+    if (pedidoRuta.estado === 'ENTREGADO') {
+      return (
+        <div className="estado-mini-pedido entregado">
+          <span>✓</span>
+        </div>
+      );
+    }
+
+    if (ruta.estado === 'EN_REPARTO' && pedidoRuta.estado === 'EN_ENTREGA') {
+      return (
+        <div className="estado-mini-pedido recogido">
+          <span></span>
+        </div>
+      );
+    }
+
+    if (
+      ruta.estado === 'AVISADA' ||
+      pedidoRuta.pedido.estado === 'MOTERO_AVISADO'
+    ) {
+      return (
+        <div className="estado-mini-pedido listo">
+          <span></span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="estado-mini-pedido pendiente">
+        <span></span>
+      </div>
+    );
   }
 
   function renderTarjetaPedido(pedido, tipo) {
@@ -327,7 +636,9 @@ function HdInternoPagina() {
             <span>{obtenerTextoOrigen(pedido)}</span>
           </div>
 
-          <p className={claseEstadoPedido(pedido.estado)}>{pedido.estado}</p>
+          <p className={claseEstadoPedido(pedido.estado)}>
+            {obtenerTextoEstadoPedido(pedido.estado)}
+          </p>
         </div>
 
         <div className="tarjeta-hd-cuerpo">
@@ -355,109 +666,92 @@ function HdInternoPagina() {
             <strong>Esperando motero</strong>
           </div>
         )}
-
-        {pedido.estado === 'MOTERO_AVISADO' && (
-          <div className="aviso-motero-listo">Listo para recogida</div>
-        )}
-
-        {(pedido.estado === 'EN_CAMINO' ||
-          pedido.estado === 'RECOGIDO_ESTABLECIMIENTO') && (
-          <div className="aviso-en-camino">Pedido en camino</div>
-        )}
       </button>
     );
   }
 
-  function renderTarjetaPedidoRuta(pedidoRuta) {
+  function renderTarjetaPedidoRuta(pedidoRuta, ruta) {
     const pedido = pedidoRuta.pedido;
 
     return (
       <button
         type="button"
         key={pedidoRuta.id}
-        className={claseTarjetaPedido(pedido)}
+        className={obtenerClaseTarjetaRuta(pedido, pedidoRuta)}
         onClick={() => abrirDetallePedido(pedido)}
       >
-        <div className="ruta-pedido-info">
-          <span>Orden {pedidoRuta.ordenEntrega}</span>
-          <strong>{obtenerTextoEstadoPedidoRuta(pedidoRuta.estado)}</strong>
+        <div className="pedido-ruta-numero">
+          <strong>{pedido.numeroPedido}</strong>
+          <span>{obtenerTextoOrigen(pedido)}</span>
         </div>
 
-        <div className="tarjeta-hd-arriba">
-          <div>
-            <strong>{pedido.numeroPedido}</strong>
-            <span>{obtenerTextoOrigen(pedido)}</span>
-          </div>
-
-          <p className={claseEstadoPedido(pedido.estado)}>{pedido.estado}</p>
+        <div className="pedido-ruta-centro">
+          <strong>{pedido.clienteDireccion || 'Sin dirección'}</strong>
+          <span>
+            {obtenerTotalProductos(pedido)} productos ·{' '}
+            {obtenerTextoEstadoPedidoRuta(pedidoRuta.estado)}
+          </span>
         </div>
 
-        <div className="tarjeta-hd-cuerpo">
-          <p>{pedido.clienteDireccion || 'Sin dirección'}</p>
-          <small>{obtenerTotalProductos(pedido)} productos</small>
+        <div className={claseEsperaPedido(pedido, pedidoRuta)}>
+          <small>
+            {pedidoRuta.estado === 'ENTREGADO' ? 'Final' : 'Espera'}
+          </small>
+          <strong>{formatearEsperaPedido(pedido, pedidoRuta)}</strong>
         </div>
 
-        {pedidoRuta.estado === 'EN_ENTREGA' && (
-          <div className="aviso-en-camino">Entrega actual</div>
-        )}
-
-        {pedidoRuta.estado === 'ENTREGADO' && (
-          <div className="aviso-pedido-entregado-ruta">
-            Entregado a las {obtenerHora(pedidoRuta.fechaEntregado)}
-          </div>
-        )}
-
-        {pedidoRuta.estado === 'PENDIENTE' && (
-          <div className="aviso-motero-listo">Pendiente en ruta</div>
-        )}
+        {renderEstadoVisualPedidoRuta(pedidoRuta, ruta)}
       </button>
     );
   }
 
   function renderGrupoRuta(ruta) {
     const totalEntregados = contarEntregadosRuta(ruta);
-    const totalPedidos = ruta.pedidos.length;
+    const totalPedidos = ruta.pedidos?.length || 0;
 
     return (
-      <article key={ruta.id} className="grupo-ruta-motero">
-        <div className="grupo-ruta-cabecera">
-          <div>
-            <span>Ruta #{ruta.id}</span>
-            <strong>{ruta.motero?.nombre || 'Sin motero'}</strong>
-            <small>{obtenerTextoEstadoRuta(ruta)}</small>
+      <article key={ruta.id} className={obtenerClaseCarrilRuta(ruta)}>
+        <div className="zona-pedidos-carril">
+          <div className="titulo-pedidos-carril">
+            <span>Pedidos</span>
+            <strong>{totalPedidos}</strong>
           </div>
 
-          <div className="grupo-ruta-accion">
-            <p>
-              {totalEntregados}/{totalPedidos} entregados
-            </p>
-
-            {puedeAvisarRuta(ruta) && (
-              <button
-                type="button"
-                className="boton-aviso-ruta"
-                disabled={rutaProcesandoId === ruta.id}
-                onClick={() => avisarRutaCompleta(ruta)}
-              >
-                {rutaProcesandoId === ruta.id
-                  ? 'Avisando...'
-                  : 'Ruta lista / avisar motero'}
-              </button>
-            )}
-
-            {ruta.estado === 'AVISADA' && (
-              <span className="etiqueta-ruta-avisada">Ruta avisada</span>
-            )}
-
-            {ruta.estado === 'EN_REPARTO' && (
-              <span className="etiqueta-ruta-reparto">En reparto</span>
+          <div className="lista-pedidos-carril">
+            {ordenarPedidosRuta(ruta.pedidos).map((pedidoRuta) =>
+              renderTarjetaPedidoRuta(pedidoRuta, ruta)
             )}
           </div>
         </div>
 
-        <div className="grupo-ruta-lista">
-          {ruta.pedidos.map((pedidoRuta) => renderTarjetaPedidoRuta(pedidoRuta))}
-        </div>
+        <aside className={obtenerClasePanelMotero(ruta)}>
+          <div className="base-motero-carril">
+            <div className={obtenerClaseOrbeRuta(ruta)}>
+              <span></span>
+            </div>
+
+            <div>
+              <span>Repartidor</span>
+              <strong>{ruta.motero?.nombre || 'Sin motero'}</strong>
+              <small>{obtenerTextoEstadoRuta(ruta)}</small>
+              <p>Mayor espera: {obtenerMayorEsperaRuta(ruta)}</p>
+              <em>
+                {totalEntregados}/{totalPedidos}
+              </em>
+            </div>
+          </div>
+
+          {puedeAvisarRuta(ruta) && (
+            <button
+              type="button"
+              className="boton-aviso-ruta"
+              disabled={rutaProcesandoId === ruta.id}
+              onClick={() => avisarRutaCompleta(ruta)}
+            >
+              {rutaProcesandoId === ruta.id ? 'Avisando...' : 'Avisar ruta'}
+            </button>
+          )}
+        </aside>
       </article>
     );
   }
@@ -478,7 +772,7 @@ function HdInternoPagina() {
               <span>{obtenerTextoOrigen(pedidoSeleccionado)}</span>
               <h2>{pedidoSeleccionado.numeroPedido}</h2>
               <p className={claseEstadoPedido(pedidoSeleccionado.estado)}>
-                {pedidoSeleccionado.estado}
+                {obtenerTextoEstadoPedido(pedidoSeleccionado.estado)}
               </p>
             </div>
 
@@ -521,11 +815,24 @@ function HdInternoPagina() {
               </article>
 
               <article>
-                <small>Motero</small>
+                <small>Repartidor</small>
                 <strong>
                   {pedidoSeleccionado.moteroAsignado?.nombre || 'Sin asignar'}
                 </strong>
               </article>
+
+              <article>
+                <small>Tiempo</small>
+                <strong>{formatearEsperaPedido(pedidoSeleccionado)}</strong>
+              </article>
+
+              {pedidoSeleccionado.total !== null &&
+                pedidoSeleccionado.total !== undefined && (
+                  <article>
+                    <small>Total</small>
+                    <strong>{formatearPrecio(pedidoSeleccionado.total)}</strong>
+                  </article>
+                )}
 
               <article className="dato-direccion-hd">
                 <small>Dirección</small>
@@ -538,22 +845,32 @@ function HdInternoPagina() {
             <section className="productos-modal-hd">
               <h3>Productos del pedido</h3>
 
-              {pedidoSeleccionado.lineas.map((linea) => (
+              {(pedidoSeleccionado.lineas || []).map((linea) => (
                 <article key={linea.id} className="linea-modal-hd">
                   <div className="linea-modal-principal">
                     <strong>
-                      <span>{linea.cantidad}x</span> {linea.producto.nombre}
+                      <span>{linea.cantidad}x</span>{' '}
+                      {obtenerNombreProductoLinea(linea)}
                     </strong>
 
-                    <small>{linea.producto.categoria}</small>
+                    <small>
+                      {obtenerCategoriaProductoLinea(linea)}
+                      {linea.precioUnitario !== null &&
+                        linea.precioUnitario !== undefined &&
+                        ` · ${formatearPrecio(linea.precioUnitario)}`}
+                    </small>
                   </div>
 
-                  {linea.modificaciones.length > 0 && (
+                  {(linea.modificaciones || []).length > 0 && (
                     <ul>
                       {linea.modificaciones.map((modificacion) => (
                         <li key={modificacion.id}>
-                          <strong>{modificacion.tipo}</strong>{' '}
-                          {modificacion.descripcion}
+                          <strong>{modificacion.tipo || 'Modificación'}</strong>{' '}
+                          {modificacion.nombre || ''}
+                          {modificacion.precio !== null &&
+                            modificacion.precio !== undefined &&
+                            Number(modificacion.precio) > 0 &&
+                            ` · ${formatearPrecio(modificacion.precio)}`}
                         </li>
                       ))}
                     </ul>
@@ -577,7 +894,7 @@ function HdInternoPagina() {
               >
                 {procesandoAccion
                   ? 'Avisando...'
-                  : 'Marcar preparado / avisar motero'}
+                  : 'Preparado / avisar ruta'}
               </button>
             )}
           </div>
@@ -612,8 +929,8 @@ function HdInternoPagina() {
         <section className="columna-hd asignacion-prevista">
           <div className="titulo-columna-hd">
             <div>
-              <p>Asignación prevista</p>
-              <span>Reservados para cuando termine una ruta</span>
+              <p>Asignación pendiente</p>
+              <span>Pedidos esperando repartidor o hueco en ruta</span>
             </div>
             <strong>
               {pedidosAsignacionPrevista.length + pedidosSinRutaTemporal.length}
@@ -623,7 +940,7 @@ function HdInternoPagina() {
           <div className="lista-pedidos-hd">
             {pedidosAsignacionPrevista.length === 0 &&
             pedidosSinRutaTemporal.length === 0 ? (
-              <p className="vacio-hd">Sin asignaciones previstas.</p>
+              <p className="vacio-hd">Sin pedidos pendientes de asignación.</p>
             ) : (
               <>
                 {pedidosAsignacionPrevista.map((pedido) =>
@@ -641,19 +958,19 @@ function HdInternoPagina() {
         <section className="columna-hd pedidos-ruta">
           <div className="titulo-columna-hd">
             <div>
-              <p>Pedidos con ruta</p>
-              <span>Rutas activas por motero</span>
+              <p>Rutas Popeyes</p>
+              <span>Pedidos activos por repartidor y prioridad</span>
             </div>
             <strong>{totalPedidosRutasActivas}</strong>
           </div>
 
-          <div className="lista-pedidos-hd">
-            {rutasActivas.length === 0 ? (
-              <p className="vacio-hd">No hay rutas activas.</p>
-            ) : (
-              rutasActivas.map((ruta) => renderGrupoRuta(ruta))
-            )}
-          </div>
+          {rutasActivas.length === 0 ? (
+            <p className="vacio-hd">No hay rutas activas.</p>
+          ) : (
+            <div className="mapa-rutas-moteros">
+              {rutasActivas.map((ruta) => renderGrupoRuta(ruta))}
+            </div>
+          )}
         </section>
       </section>
     );
@@ -664,7 +981,7 @@ function HdInternoPagina() {
       <section className="panel-historial-principal-hd">
         <div className="cabecera-vista-historial">
           <div>
-            <p>Historial HD</p>
+            <p>Historial Popeyes Delivery</p>
             <span>Pedidos entregados y cancelados del día</span>
           </div>
 
@@ -692,13 +1009,9 @@ function HdInternoPagina() {
 
                 <div>
                   <p className={claseEstadoPedido(pedido.estado)}>
-                    {pedido.estado}
+                    {obtenerTextoEstadoPedido(pedido.estado)}
                   </p>
-                  <small>
-                    {pedido.estado === 'ENTREGADO'
-                      ? obtenerHora(pedido.fechaEntregado)
-                      : obtenerHora(pedido.fechaCreacion)}
-                  </small>
+                  <small>Tiempo: {formatearEsperaPedido(pedido)}</small>
                 </div>
               </button>
             ))
@@ -721,8 +1034,8 @@ function HdInternoPagina() {
         </div>
 
         <p className="vacio-hd">
-          Más adelante aquí veremos pedidos con incidencias, mensajes de cliente,
-          reclamaciones y respuestas del restaurante.
+          Más adelante aquí veremos pedidos con incidencias, mensajes del
+          cliente, reclamaciones y respuestas del restaurante.
         </p>
       </section>
     );
@@ -732,9 +1045,9 @@ function HdInternoPagina() {
     <main className="pagina-hd-interno">
       <section className="cabecera-hd-interno">
         <div>
-          <p>Control interno</p>
-          <h1>HD / Delivery interno</h1>
-          <span>Glovo, Just Eat, Uber Eats y pedidos web.</span>
+          <p>Control Popeyes</p>
+          <h1>Popeyes Delivery HD</h1>
+          <span>Seguimiento interno de rutas, repartidores y tiempos.</span>
         </div>
 
         <div className="acciones-cabecera-hd">
@@ -765,7 +1078,7 @@ function HdInternoPagina() {
           className={vistaActiva === 'pedidos' ? 'activa' : ''}
           onClick={() => setVistaActiva('pedidos')}
         >
-          <span>Pedidos</span>
+          <span>Operativa</span>
           <strong>{pedidosActivos}</strong>
         </button>
 
@@ -788,7 +1101,7 @@ function HdInternoPagina() {
         </button>
       </nav>
 
-      {cargando && <p className="mensaje-hd">Cargando pedidos...</p>}
+      {cargando && <p className="mensaje-hd">Cargando operativa...</p>}
 
       {mensaje && !pedidoSeleccionado && (
         <p className="mensaje-hd">{mensaje}</p>

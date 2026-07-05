@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { crearPedidoHd } from '../servicios/pedidoServicio';
 import { listarProductos } from '../servicios/productoServicio';
 
@@ -52,8 +52,10 @@ function GlovoSimuladoPagina() {
       ...lineas,
       {
         productoId: producto.id,
-        nombre: producto.nombre,
+        codigoProductoExterno: producto.codigoExterno,
+        nombreProducto: producto.nombre,
         categoria: producto.categoria,
+        precioUnitario: producto.precio,
         cantidad: 1,
         modificaciones: [],
       },
@@ -103,8 +105,10 @@ function GlovoSimuladoPagina() {
           ...linea,
           modificaciones: [
             {
+              codigoExterno: 'NOTA-MANUAL',
+              nombre: texto,
               tipo: 'NOTA',
-              descripcion: texto,
+              precio: 0,
             },
           ],
         };
@@ -117,7 +121,7 @@ function GlovoSimuladoPagina() {
       return '';
     }
 
-    return linea.modificaciones[0].descripcion;
+    return linea.modificaciones[0].nombre || '';
   }
 
   function formatearFechaProgramadaParaBackend(valor) {
@@ -130,6 +134,23 @@ function GlovoSimuladoPagina() {
     }
 
     return valor;
+  }
+
+  function calcularTotalPedido() {
+    return lineas.reduce((total, linea) => {
+      const precio = Number(linea.precioUnitario || 0);
+      const cantidad = Number(linea.cantidad || 0);
+
+      return total + precio * cantidad;
+    }, 0);
+  }
+
+  function generarIdExternoPedido() {
+    const numeroAleatorio = Math.floor(Math.random() * 1000000)
+      .toString()
+      .padStart(6, '0');
+
+    return `${plataforma}-${Date.now()}-${numeroAleatorio}`;
   }
 
   async function enviarPedido() {
@@ -149,16 +170,22 @@ function GlovoSimuladoPagina() {
       setError('');
 
       const datosPedido = {
+        idExterno: generarIdExternoPedido(),
         plataforma,
         clienteNombre,
         clienteDireccion,
         clienteTelefono,
+        total: calcularTotalPedido(),
+        pagado: true,
         fechaProgramada:
           tipoPedido === 'programado'
             ? formatearFechaProgramadaParaBackend(fechaProgramada)
             : null,
         lineas: lineas.map((linea) => ({
           productoId: linea.productoId,
+          codigoProductoExterno: linea.codigoProductoExterno,
+          nombreProducto: linea.nombreProducto,
+          precioUnitario: linea.precioUnitario,
           cantidad: linea.cantidad,
           modificaciones: linea.modificaciones,
         })),
@@ -168,7 +195,7 @@ function GlovoSimuladoPagina() {
 
       if (pedidoCreado.estado === 'PROGRAMADO') {
         setMensaje(
-          `Pedido programado creado: ${pedidoCreado.numeroPedido}. Saldrá a cocina a su hora.`
+          `Pedido programado creado: ${pedidoCreado.numeroPedido}. Se activará a su hora.`
         );
       } else {
         setMensaje(
@@ -208,7 +235,7 @@ function GlovoSimuladoPagina() {
           <p>Simulador externo</p>
           <h1>Simulador Glovo</h1>
           <span>
-            Crea pedidos HD normales o programados para probar el panel interno.
+            Crea pedidos delivery normales o programados para probar FastFlow.
           </span>
         </div>
 
@@ -234,7 +261,8 @@ function GlovoSimuladoPagina() {
               <option value="GLOVO">Glovo</option>
               <option value="JUST_EAT">Just Eat</option>
               <option value="UBER_EATS">Uber Eats</option>
-              <option value="WEB">Web</option>
+              <option value="POPEYES_DELIVERY">Popeyes Delivery</option>
+              <option value="MANUAL_HD">Manual HD</option>
             </select>
           </label>
 
@@ -311,7 +339,7 @@ function GlovoSimuladoPagina() {
                       onClick={() => agregarProducto(producto)}
                     >
                       <strong>{producto.nombre}</strong>
-                      <span>{Number(producto.precio).toFixed(2)} €</span>
+                      <span>{Number(producto.precio || 0).toFixed(2)} €</span>
                     </button>
                   ))}
                 </div>
@@ -331,9 +359,12 @@ function GlovoSimuladoPagina() {
                   <div className="linea-glovo-superior">
                     <div>
                       <strong>
-                        {linea.cantidad}x {linea.nombre}
+                        {linea.cantidad}x {linea.nombreProducto}
                       </strong>
-                      <span>{linea.categoria}</span>
+                      <span>
+                        {linea.categoria} ·{' '}
+                        {Number(linea.precioUnitario || 0).toFixed(2)} €
+                      </span>
                     </div>
 
                     <button
@@ -359,8 +390,10 @@ function GlovoSimuladoPagina() {
                       onClick={() =>
                         agregarProducto({
                           id: linea.productoId,
-                          nombre: linea.nombre,
+                          codigoExterno: linea.codigoProductoExterno,
+                          nombre: linea.nombreProducto,
                           categoria: linea.categoria,
+                          precio: linea.precioUnitario,
                         })
                       }
                     >
