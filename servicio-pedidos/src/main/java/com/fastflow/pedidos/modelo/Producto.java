@@ -1,6 +1,5 @@
 package com.fastflow.pedidos.modelo;
 
-import com.fastflow.pedidos.modelo.enums.CategoriaProducto;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -19,16 +18,17 @@ public class Producto {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // Código externo de la plataforma si existe
+    private String codigoExterno;
+
     // Nombre visible del producto
     @Column(nullable = false)
     private String nombre;
 
-    // Categoría principal del producto
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private CategoriaProducto categoria;
+    // Categoría recibida como texto desde la plataforma o simulador
+    private String categoria;
 
-    // Precio simulado del producto
+    // Precio del producto
     @Column(nullable = false)
     private BigDecimal precio;
 

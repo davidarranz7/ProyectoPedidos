@@ -6,6 +6,7 @@ import com.fastflow.pedidos.modelo.enums.PlataformaPedido;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,8 +24,12 @@ public class Pedido {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // Número visible interno de FastFlow
     @Column(nullable = false)
     private String numeroPedido;
+
+    // ID real que venga de Glovo, Uber, Just Eat o Popeyes Delivery
+    private String idExterno;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -44,6 +49,13 @@ public class Pedido {
     private String clienteDireccion;
 
     private String clienteTelefono;
+
+    // Total del pedido si la plataforma lo envía
+    private BigDecimal total;
+
+    // Si el pedido ya viene pagado desde la plataforma
+    @Builder.Default
+    private Boolean pagado = true;
 
     @ManyToOne
     @JoinColumn(name = "motero_id")
@@ -70,6 +82,10 @@ public class Pedido {
     public void antesDeGuardar() {
         if (fechaCreacion == null) {
             fechaCreacion = LocalDateTime.now();
+        }
+
+        if (pagado == null) {
+            pagado = true;
         }
     }
 }

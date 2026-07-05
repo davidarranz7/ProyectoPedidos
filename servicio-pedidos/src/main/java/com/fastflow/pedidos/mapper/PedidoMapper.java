@@ -26,12 +26,15 @@ public class PedidoMapper {
         return PedidoResponse.builder()
                 .id(pedido.getId())
                 .numeroPedido(pedido.getNumeroPedido())
+                .idExterno(pedido.getIdExterno())
                 .origen(pedido.getOrigen())
                 .plataforma(pedido.getPlataforma())
                 .estado(pedido.getEstado())
                 .clienteNombre(pedido.getClienteNombre())
                 .clienteDireccion(pedido.getClienteDireccion())
                 .clienteTelefono(pedido.getClienteTelefono())
+                .total(pedido.getTotal())
+                .pagado(pedido.getPagado())
                 .moteroAsignado(convertirMotero(pedido.getMoteroAsignado()))
                 .fechaCreacion(pedido.getFechaCreacion())
                 .fechaProgramada(pedido.getFechaProgramada())
@@ -50,6 +53,7 @@ public class PedidoMapper {
 
         return ProductoResponse.builder()
                 .id(producto.getId())
+                .codigoExterno(producto.getCodigoExterno())
                 .nombre(producto.getNombre())
                 .categoria(producto.getCategoria())
                 .precio(producto.getPrecio())
@@ -78,6 +82,9 @@ public class PedidoMapper {
         return LineaPedidoResponse.builder()
                 .id(lineaPedido.getId())
                 .producto(convertirProducto(lineaPedido.getProducto()))
+                .codigoProductoExterno(lineaPedido.getCodigoProductoExterno())
+                .nombreProducto(lineaPedido.getNombreProducto())
+                .precioUnitario(lineaPedido.getPrecioUnitario())
                 .cantidad(lineaPedido.getCantidad())
                 .modificaciones(convertirModificaciones(lineaPedido.getModificaciones()))
                 .build();
@@ -90,8 +97,10 @@ public class PedidoMapper {
 
         return ModificacionResponse.builder()
                 .id(modificacionProducto.getId())
+                .codigoExterno(modificacionProducto.getCodigoExterno())
+                .nombre(modificacionProducto.getNombre())
                 .tipo(modificacionProducto.getTipo())
-                .descripcion(modificacionProducto.getDescripcion())
+                .precio(modificacionProducto.getPrecio())
                 .build();
     }
 
@@ -135,3 +144,5 @@ public class PedidoMapper {
                 .toList();
     }
 }
+
+

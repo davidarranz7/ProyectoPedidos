@@ -5,6 +5,7 @@ import com.fastflow.pedidos.modelo.enums.OrigenPedido;
 import com.fastflow.pedidos.modelo.enums.PlataformaPedido;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,6 +21,8 @@ public class PedidoResponse {
 
     private String numeroPedido;
 
+    private String idExterno;
+
     private OrigenPedido origen;
 
     private PlataformaPedido plataforma;
@@ -31,6 +34,10 @@ public class PedidoResponse {
     private String clienteDireccion;
 
     private String clienteTelefono;
+
+    private BigDecimal total;
+
+    private Boolean pagado;
 
     private MoteroResponse moteroAsignado;
 

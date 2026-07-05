@@ -1,6 +1,5 @@
 package com.fastflow.pedidos.dto;
 
-import com.fastflow.pedidos.modelo.enums.CategoriaProducto;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -14,9 +13,11 @@ public class ProductoResponse {
 
     private Long id;
 
+    private String codigoExterno;
+
     private String nombre;
 
-    private CategoriaProducto categoria;
+    private String categoria;
 
     private BigDecimal precio;
 

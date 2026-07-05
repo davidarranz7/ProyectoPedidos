@@ -1,7 +1,8 @@
 package com.fastflow.pedidos.dto;
 
-import com.fastflow.pedidos.modelo.enums.TipoModificacion;
 import lombok.*;
+
+import java.math.BigDecimal;
 
 @Getter
 @Setter
@@ -12,7 +13,11 @@ public class ModificacionResponse {
 
     private Long id;
 
-    private TipoModificacion tipo;
+    private String codigoExterno;
 
-    private String descripcion;
+    private String nombre;
+
+    private String tipo;
+
+    private BigDecimal precio;
 }

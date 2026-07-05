@@ -76,7 +76,7 @@ public class RutaRepartoServicio {
     public void repartirPedidosPrevistosEntreMoterosDisponibles() {
         List<Pedido> pedidosEsperando = pedidoRepositorio
                 .findByEstadoAndMoteroAsignadoIsNullOrderByFechaCreacionAsc(
-                        EstadoPedido.ASIGNACION_PREVISTA
+                        EstadoPedido.PENDIENTE_ASIGNACION
                 );
 
         while (!pedidosEsperando.isEmpty()) {
@@ -130,7 +130,7 @@ public class RutaRepartoServicio {
         return candidatas.stream()
                 .filter(candidata -> candidata.getMotero() != null)
                 .filter(candidata -> !pedidoRepositorio.existsByEstadoAndMoteroAsignado_Id(
-                        EstadoPedido.ASIGNACION_PREVISTA,
+                        EstadoPedido.PENDIENTE_ASIGNACION,
                         candidata.getMotero().getId()
                 ))
                 .max(
@@ -214,7 +214,7 @@ public class RutaRepartoServicio {
 
             if (pedido.getEstado() == EstadoPedido.ASIGNADO_MOTERO
                     || pedido.getEstado() == EstadoPedido.PREPARADO
-                    || pedido.getEstado() == EstadoPedido.EN_COCINA) {
+                    || pedido.getEstado() == EstadoPedido.EN_PREPARACION) {
                 pedido.setEstado(EstadoPedido.MOTERO_AVISADO);
             }
         }
@@ -386,7 +386,7 @@ public class RutaRepartoServicio {
 
         List<Pedido> pedidosEsperando = pedidoRepositorio
                 .findByEstadoAndMoteroAsignadoIsNullOrderByFechaCreacionAsc(
-                        EstadoPedido.ASIGNACION_PREVISTA
+                        EstadoPedido.PENDIENTE_ASIGNACION
                 );
 
         if (pedidosEsperando.isEmpty()) {
@@ -407,7 +407,7 @@ public class RutaRepartoServicio {
         List<Pedido> pedidosPrevistos = pedidoRepositorio
                 .findByMoteroAsignado_IdAndEstadoInOrderByFechaCreacionAsc(
                         motero.getId(),
-                        List.of(EstadoPedido.ASIGNACION_PREVISTA)
+                        List.of(EstadoPedido.PENDIENTE_ASIGNACION)
                 );
 
         if (pedidosPrevistos.isEmpty()) {

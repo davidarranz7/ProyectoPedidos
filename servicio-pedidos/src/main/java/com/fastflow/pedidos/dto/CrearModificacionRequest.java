@@ -1,9 +1,8 @@
 package com.fastflow.pedidos.dto;
 
-import com.fastflow.pedidos.modelo.enums.TipoModificacion;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.*;
+
+import java.math.BigDecimal;
 
 @Getter
 @Setter
@@ -12,9 +11,11 @@ import lombok.*;
 @Builder
 public class CrearModificacionRequest {
 
-    @NotNull(message = "El tipo de modificación es obligatorio")
-    private TipoModificacion tipo;
+    private String codigoExterno;
 
-    @NotBlank(message = "La descripción de la modificación es obligatoria")
-    private String descripcion;
+    private String nombre;
+
+    private String tipo;
+
+    private BigDecimal precio;
 }

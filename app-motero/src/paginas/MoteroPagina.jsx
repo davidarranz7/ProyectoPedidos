@@ -20,17 +20,31 @@ function MoteroPagina() {
   const [mensaje, setMensaje] = useState('');
   const [error, setError] = useState('');
 
+  const moteroSeleccionadoId = moteroSeleccionado?.id;
+
   useEffect(() => {
     cargarMoteros();
   }, []);
 
   useEffect(() => {
-    if (moteroSeleccionado) {
-      cargarRutaActiva(moteroSeleccionado.id);
+    if (moteroSeleccionadoId) {
+      cargarRutaActiva(moteroSeleccionadoId);
     } else {
       setRutaActiva(null);
     }
-  }, [moteroSeleccionado]);
+  }, [moteroSeleccionadoId]);
+
+  useEffect(() => {
+    if (!moteroSeleccionadoId) {
+      return;
+    }
+
+    const intervalo = setInterval(() => {
+      actualizarAutomaticamente(moteroSeleccionadoId);
+    }, 5000);
+
+    return () => clearInterval(intervalo);
+  }, [moteroSeleccionadoId]);
 
   async function cargarMoteros() {
     try {
@@ -66,6 +80,26 @@ function MoteroPagina() {
       setError('No se pudo cargar la ruta activa del motero.');
     } finally {
       setCargandoRuta(false);
+    }
+  }
+
+  async function actualizarAutomaticamente(moteroId) {
+    try {
+      const datosMoteros = await listarMoteros();
+      setMoteros(datosMoteros);
+
+      const moteroActualizado = datosMoteros.find(
+        (motero) => motero.id === moteroId
+      );
+
+      if (moteroActualizado) {
+        setMoteroSeleccionado(moteroActualizado);
+      }
+
+      const ruta = await obtenerRutaActivaMotero(moteroId);
+      setRutaActiva(ruta);
+    } catch (error) {
+      // No mostramos error en autoactualización para no molestar al motero.
     }
   }
 
@@ -411,9 +445,7 @@ function MoteroPagina() {
           )}
 
           {pedidoRuta.estado === 'ENTREGADO' && (
-            <span className="pedido-entregado-motero">
-              Entregado
-            </span>
+            <span className="pedido-entregado-motero">Entregado</span>
           )}
         </div>
       </article>

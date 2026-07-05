@@ -10,7 +10,6 @@ import com.fastflow.pedidos.modelo.ModificacionProducto;
 import com.fastflow.pedidos.modelo.Motero;
 import com.fastflow.pedidos.modelo.Pedido;
 import com.fastflow.pedidos.modelo.Producto;
-import com.fastflow.pedidos.modelo.enums.CategoriaProducto;
 import com.fastflow.pedidos.modelo.enums.EstadoMotero;
 import com.fastflow.pedidos.modelo.enums.EstadoPedido;
 import com.fastflow.pedidos.modelo.enums.OrigenPedido;
@@ -43,50 +42,35 @@ public class PedidoServicio {
     @Transactional
     public PedidoResponse crearPedidoHd(CrearPedidoHdRequest request) {
         validarPlataformaHd(request.getPlataforma());
+        validarLineasPedido(request);
 
         LocalDateTime ahora = LocalDateTime.now();
+
         boolean esProgramado = request.getFechaProgramada() != null
                 && request.getFechaProgramada().isAfter(ahora);
 
         Pedido pedido = Pedido.builder()
                 .numeroPedido(generarNumeroPedidoVisible(request.getPlataforma(), ahora))
-                .origen(OrigenPedido.HD)
+                .idExterno(request.getIdExterno())
+                .origen(OrigenPedido.DELIVERY)
                 .plataforma(request.getPlataforma())
-                .estado(esProgramado ? EstadoPedido.PROGRAMADO : EstadoPedido.EN_COCINA)
+                .estado(esProgramado ? EstadoPedido.PROGRAMADO : EstadoPedido.EN_PREPARACION)
                 .clienteNombre(request.getClienteNombre())
                 .clienteDireccion(request.getClienteDireccion())
                 .clienteTelefono(request.getClienteTelefono())
+                .total(request.getTotal())
+                .pagado(request.getPagado() != null ? request.getPagado() : true)
                 .fechaCreacion(ahora)
                 .fechaProgramada(request.getFechaProgramada())
                 .build();
 
         for (CrearLineaPedidoRequest lineaRequest : request.getLineas()) {
-            Producto producto = productoRepositorio.findById(lineaRequest.getProductoId())
-                    .orElseThrow(() -> new RuntimeException("Producto no encontrado con id: " + lineaRequest.getProductoId()));
-
-            LineaPedido lineaPedido = LineaPedido.builder()
-                    .pedido(pedido)
-                    .producto(producto)
-                    .cantidad(lineaRequest.getCantidad())
-                    .build();
-
-            if (lineaRequest.getModificaciones() != null) {
-                for (CrearModificacionRequest modificacionRequest : lineaRequest.getModificaciones()) {
-                    ModificacionProducto modificacion = ModificacionProducto.builder()
-                            .lineaPedido(lineaPedido)
-                            .tipo(modificacionRequest.getTipo())
-                            .descripcion(modificacionRequest.getDescripcion())
-                            .build();
-
-                    lineaPedido.getModificaciones().add(modificacion);
-                }
-            }
-
+            LineaPedido lineaPedido = crearLineaPedido(pedido, lineaRequest);
             pedido.getLineas().add(lineaPedido);
         }
 
         if (!esProgramado) {
-            asignarPedidoODejarEnPrevision(pedido);
+            asignarPedidoODejarPendiente(pedido);
         }
 
         Pedido pedidoGuardado = pedidoRepositorio.save(pedido);
@@ -103,24 +87,9 @@ public class PedidoServicio {
     public List<PedidoResponse> listarPedidosHd() {
         activarPedidosProgramadosVencidos();
 
-        List<Pedido> pedidos = pedidoRepositorio.findByOrigenOrderByFechaCreacionDesc(OrigenPedido.HD);
+        List<Pedido> pedidos = pedidoRepositorio.findByOrigenOrderByFechaCreacionDesc(OrigenPedido.DELIVERY);
+
         return pedidoMapper.convertirPedidos(pedidos);
-    }
-
-    @Transactional
-    public List<PedidoResponse> listarPedidosCocinaHamburguesas() {
-        activarPedidosProgramadosVencidos();
-
-        List<Pedido> pedidos = pedidoRepositorio.findAllByOrderByFechaCreacionDesc();
-
-        return pedidos.stream()
-                .filter(pedido -> pedido.getEstado() != EstadoPedido.PROGRAMADO)
-                .filter(pedido -> pedido.getEstado() != EstadoPedido.ENTREGADO)
-                .filter(pedido -> pedido.getEstado() != EstadoPedido.CANCELADO)
-                .map(this::filtrarPedidoParaHamburguesas)
-                .filter(pedido -> !pedido.getLineas().isEmpty())
-                .map(pedidoMapper::convertirPedido)
-                .toList();
     }
 
     @Transactional
@@ -151,8 +120,8 @@ public class PedidoServicio {
                 );
 
         for (Pedido pedido : pedidosProgramados) {
-            pedido.setEstado(EstadoPedido.EN_COCINA);
-            asignarPedidoODejarEnPrevision(pedido);
+            pedido.setEstado(EstadoPedido.EN_PREPARACION);
+            asignarPedidoODejarPendiente(pedido);
         }
 
         List<Pedido> pedidosGuardados = pedidoRepositorio.saveAll(pedidosProgramados);
@@ -165,7 +134,69 @@ public class PedidoServicio {
         }
     }
 
-    private void asignarPedidoODejarEnPrevision(Pedido pedido) {
+    private LineaPedido crearLineaPedido(Pedido pedido, CrearLineaPedidoRequest lineaRequest) {
+        Producto producto = null;
+
+        if (lineaRequest.getProductoId() != null) {
+            producto = productoRepositorio.findById(lineaRequest.getProductoId())
+                    .orElseThrow(() -> new RuntimeException("Producto no encontrado con id: " + lineaRequest.getProductoId()));
+        }
+
+        String codigoProductoExterno = lineaRequest.getCodigoProductoExterno();
+        String nombreProducto = lineaRequest.getNombreProducto();
+        var precioUnitario = lineaRequest.getPrecioUnitario();
+
+        if (producto != null) {
+            if (codigoProductoExterno == null || codigoProductoExterno.isBlank()) {
+                codigoProductoExterno = producto.getCodigoExterno();
+            }
+
+            if (nombreProducto == null || nombreProducto.isBlank()) {
+                nombreProducto = producto.getNombre();
+            }
+
+            if (precioUnitario == null) {
+                precioUnitario = producto.getPrecio();
+            }
+        }
+
+        if (nombreProducto == null || nombreProducto.isBlank()) {
+            throw new RuntimeException("El nombre del producto es obligatorio");
+        }
+
+        LineaPedido lineaPedido = LineaPedido.builder()
+                .pedido(pedido)
+                .producto(producto)
+                .codigoProductoExterno(codigoProductoExterno)
+                .nombreProducto(nombreProducto)
+                .precioUnitario(precioUnitario)
+                .cantidad(lineaRequest.getCantidad())
+                .build();
+
+        if (lineaRequest.getModificaciones() != null) {
+            for (CrearModificacionRequest modificacionRequest : lineaRequest.getModificaciones()) {
+                ModificacionProducto modificacion = ModificacionProducto.builder()
+                        .lineaPedido(lineaPedido)
+                        .codigoExterno(modificacionRequest.getCodigoExterno())
+                        .nombre(modificacionRequest.getNombre())
+                        .tipo(modificacionRequest.getTipo())
+                        .precio(modificacionRequest.getPrecio())
+                        .build();
+
+                lineaPedido.getModificaciones().add(modificacion);
+            }
+        }
+
+        return lineaPedido;
+    }
+
+    private void validarLineasPedido(CrearPedidoHdRequest request) {
+        if (request.getLineas() == null || request.getLineas().isEmpty()) {
+            throw new RuntimeException("El pedido debe tener al menos una línea");
+        }
+    }
+
+    private void asignarPedidoODejarPendiente(Pedido pedido) {
         Optional<Motero> mejorMotero = buscarMejorMoteroParaNuevaRuta();
 
         if (mejorMotero.isPresent()) {
@@ -176,7 +207,7 @@ public class PedidoServicio {
         Optional<Motero> candidatoPrevisto = rutaRepartoServicio
                 .buscarMoteroCandidatoAsignacionPrevista();
 
-        pedido.setEstado(EstadoPedido.ASIGNACION_PREVISTA);
+        pedido.setEstado(EstadoPedido.PENDIENTE_ASIGNACION);
         pedido.setMoteroAsignado(candidatoPrevisto.orElse(null));
     }
 
@@ -226,56 +257,30 @@ public class PedidoServicio {
         );
     }
 
-    private Pedido filtrarPedidoParaHamburguesas(Pedido pedidoOriginal) {
-        List<LineaPedido> lineasHamburguesas = pedidoOriginal.getLineas()
-                .stream()
-                .filter(this::esProductoDePantallaHamburguesas)
-                .toList();
-
-        return Pedido.builder()
-                .id(pedidoOriginal.getId())
-                .numeroPedido(pedidoOriginal.getNumeroPedido())
-                .origen(pedidoOriginal.getOrigen())
-                .plataforma(pedidoOriginal.getPlataforma())
-                .estado(pedidoOriginal.getEstado())
-                .clienteNombre(pedidoOriginal.getClienteNombre())
-                .clienteDireccion(pedidoOriginal.getClienteDireccion())
-                .clienteTelefono(pedidoOriginal.getClienteTelefono())
-                .moteroAsignado(pedidoOriginal.getMoteroAsignado())
-                .fechaCreacion(pedidoOriginal.getFechaCreacion())
-                .fechaProgramada(pedidoOriginal.getFechaProgramada())
-                .fechaPreparado(pedidoOriginal.getFechaPreparado())
-                .fechaRecogidoEstablecimiento(pedidoOriginal.getFechaRecogidoEstablecimiento())
-                .fechaEnCamino(pedidoOriginal.getFechaEnCamino())
-                .fechaEntregado(pedidoOriginal.getFechaEntregado())
-                .lineas(lineasHamburguesas)
-                .build();
-    }
-
-    private boolean esProductoDePantallaHamburguesas(LineaPedido lineaPedido) {
-        CategoriaProducto categoria = lineaPedido.getProducto().getCategoria();
-
-        return categoria == CategoriaProducto.HAMBURGUESA
-                || categoria == CategoriaProducto.WRAP
-                || categoria == CategoriaProducto.ENSALADA_PRINCIPAL;
-    }
-
     private String generarNumeroPedidoVisible(PlataformaPedido plataforma, LocalDateTime fechaPedido) {
         String prefijo = obtenerPrefijoPedido(plataforma);
-        String prefijoConGuion = prefijo + "-";
+
+        String fecha = String.format(
+                "%04d%02d%02d",
+                fechaPedido.getYear(),
+                fechaPedido.getMonthValue(),
+                fechaPedido.getDayOfMonth()
+        );
+
+        String prefijoConFecha = prefijo + "-" + fecha + "-";
 
         LocalDateTime inicioDia = fechaPedido.toLocalDate().atStartOfDay();
         LocalDateTime finDia = fechaPedido.toLocalDate().atTime(LocalTime.MAX);
 
         long totalPedidosHoy = pedidoRepositorio.countByNumeroPedidoStartingWithAndFechaCreacionBetween(
-                prefijoConGuion,
+                prefijoConFecha,
                 inicioDia,
                 finDia
         );
 
         long siguienteNumero = totalPedidosHoy + 1;
 
-        return prefijoConGuion + String.format("%03d", siguienteNumero);
+        return prefijoConFecha + String.format("%03d", siguienteNumero);
     }
 
     private String obtenerPrefijoPedido(PlataformaPedido plataforma) {
@@ -283,14 +288,14 @@ public class PedidoServicio {
             case GLOVO -> "GLOVO";
             case JUST_EAT -> "JUST";
             case UBER_EATS -> "UBER";
-            case WEB -> "WEB";
-            case LOCAL -> "LOCAL";
+            case POPEYES_DELIVERY -> "POPEYES";
+            case MANUAL_HD -> "MANUAL";
         };
     }
 
     private void validarPlataformaHd(PlataformaPedido plataforma) {
-        if (plataforma == PlataformaPedido.LOCAL) {
-            throw new RuntimeException("Un pedido HD no puede tener plataforma LOCAL");
+        if (plataforma == null) {
+            throw new RuntimeException("La plataforma del pedido es obligatoria");
         }
     }
 }
